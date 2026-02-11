@@ -5,8 +5,10 @@
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
+
+//#define DISPLAY_TYPE DISPLAY_SH1107
 #include "xbegone_menu.h"
-#define DISPLAY_TYPE DISPLAY_SH1107
+
 #include "drivers/display.h"
 #include "menu.h"
 #include "drivers/rotary.h"

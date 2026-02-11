@@ -11,6 +11,7 @@
 #define MAX_IR_COMMANDS 32
 #define MAX_IR_NAME_LEN 32
 #define IR_FILE_BUFFER 512
+#define MAX_FILENAME_LEN 320 
 #define MAX_IR_FILES 64
 #define MAX_CATEGORY_LEN 32
 
@@ -50,7 +51,7 @@ static char ir_folder_path[256] = "/IR";
 
 // Extended file list with category support
 typedef struct {
-    char files[MAX_IR_FILES][64];
+    char files[MAX_IR_FILES][MAX_FILENAME_LEN];  // Changed from [64]
     char categories[MAX_IR_FILES][MAX_CATEGORY_LEN];
     uint8_t count;
 } IR_FileList;
@@ -255,9 +256,9 @@ static inline uint8_t ir_execute_by_type(SignalType type) {
     return 0;
 }
 
-// Recursive directory scan
+// ir_system.h line 265-310
 static inline void ir_scan_directory_recursive(const char *base_path, const char *current_path) {
-    char full_path[280];
+    char full_path[512];  // Increased from 280
     snprintf(full_path, sizeof(full_path), "/sdcard%s%s", base_path, current_path);
     
     DIR *dir = opendir(full_path);
@@ -267,33 +268,28 @@ static inline void ir_scan_directory_recursive(const char *base_path, const char
     struct stat st;
     
     while ((entry = readdir(dir)) != NULL && ir_file_list.count < MAX_IR_FILES) {
-        // Skip . and ..
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
         
-        char entry_path[320];
+        char entry_path[768];  // Increased: 512 (path) + 256 (filename)
         snprintf(entry_path, sizeof(entry_path), "%s/%s", full_path, entry->d_name);
         
         if (stat(entry_path, &st) == 0) {
             if (S_ISDIR(st.st_mode)) {
-                // Recurse into subdirectory
-                char new_path[256];
+                char new_path[512];  // Increased from 256
                 snprintf(new_path, sizeof(new_path), "%s/%s", current_path, entry->d_name);
                 ir_scan_directory_recursive(base_path, new_path);
             } else {
-                // Check for .IR or .ir extension
                 size_t len = strlen(entry->d_name);
                 if (len > 3) {
                     const char *ext = &entry->d_name[len - 3];
                     if (strcasecmp(ext, ".IR") == 0) {
-                        // Store full relative path
                         snprintf(ir_file_list.files[ir_file_list.count], 
                                 sizeof(ir_file_list.files[0]), 
                                 "%s/%s", current_path, entry->d_name);
                         
-                        // Extract and store category
-                        char full_rel_path[280];
+                        char full_rel_path[512];  // Increased from 280
                         snprintf(full_rel_path, sizeof(full_rel_path), "%s/%s", current_path, entry->d_name);
                         extract_category(full_rel_path, ir_file_list.categories[ir_file_list.count]);
                         
@@ -306,7 +302,6 @@ static inline void ir_scan_directory_recursive(const char *base_path, const char
     
     closedir(dir);
 }
-
 // Scan IR folder and all subdirectories
 static inline uint8_t ir_scan_folder(const char *folder) {
     ir_file_list.count = 0;
@@ -360,7 +355,7 @@ static inline void ir_xbegone_run_signal_type(SignalType type, const char *categ
     println("");
     display_show();
     
-    char filepath[320];
+    char filepath[600];
     
     for (uint8_t i = 0; i < ir_file_list.count; i++) {
         // Apply category filter if specified

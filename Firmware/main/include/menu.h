@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include "drivers/display.h"
 
-#define MAX_MENU_ITEMS 8
+#define MAX_MENU_ITEMS 20
 #define MENU_ITEM_HEIGHT 12
 #define MENU_SCROLL_MARGIN 2
 #define TITLE_BAR_HEIGHT 12

@@ -18,13 +18,13 @@ static const char *TAG = "NAVI";
 #define I2C_SDA 16
 #define I2C_SCL 17
 #define ROTARY_CLK 5
-#define ROTARY_DT 6
+#define ROTARY_DT 18
 #define ROTARY_SW 7
 #define SD_MOSI 11
 #define SD_MISO 13
 #define SD_CLK 12
 #define SD_CS 10
-
+#define IR_PIN 4
 Rotary encoder;
 Menu main_menu;
 Menu settings_menu;
@@ -368,9 +368,22 @@ void app_main(void) {
     delay(1000);
     
     // Initialize rotary encoder
-    rotary_init(&encoder, ROTARY_CLK, ROTARY_DT, ROTARY_SW);
-    ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
-             ROTARY_CLK, ROTARY_DT, ROTARY_SW);
+rotary_init(&encoder, ROTARY_CLK, ROTARY_DT, ROTARY_SW);
+ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
+         ROTARY_CLK, ROTARY_DT, ROTARY_SW);
+
+// Test encoder pins
+ESP_LOGI(TAG, "Testing encoder pins - turn the knob now:");
+for (int i = 0; i < 20; i++) {
+    uint8_t clk = gpio_get_level((gpio_num_t)ROTARY_CLK);
+    uint8_t dt = gpio_get_level((gpio_num_t)ROTARY_DT);
+    printf("  CLK=%d DT=%d\n", clk, dt);
+    delay(100);
+}
+ESP_LOGI(TAG, "Pin test complete");
+
+// Main menu with icons
+menu_init(&main_menu, "Main Menu");
     
     // Main menu with icons
     menu_init(&main_menu, "Main Menu");

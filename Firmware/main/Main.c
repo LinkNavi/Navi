@@ -1,3 +1,4 @@
+// Main.c - Updated with BLE support
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -17,6 +18,10 @@
 #include "wifi_menu.h"
 #include "rotary_debug.h"
 #include "wifi_thingies_menu.h"
+#include "ble_menu.h"
+#include "drivers/ble.h"
+#include "drivers/ble_commands.h"
+
 static const char *TAG = "NAVI";
 
 #include "driver/rmt_tx.h"
@@ -40,7 +45,6 @@ Menu *current_menu = NULL;
 char status_text[32] = "";
 RotaryPCNT encoder;
 
-// CRITICAL FIX: Move menus to static storage to save stack space
 static Menu main_menu;
 static Menu settings_menu;
 static Menu display_menu;
@@ -614,10 +618,12 @@ void ir_browse_files(void) {
     menu_set_active(&ir_file_menu);
     menu_draw();
 }
+
 void rotary_debug_screen(void) {
     rotary_debug_run(&encoder);
     back_to_main();
 }
+
 void ir_test_signal(void) {
     display_clear();
     set_cursor(2, 10);
@@ -651,13 +657,14 @@ void about_screen(void) {
     set_cursor(2, 10);
     set_font(FONT_TOMTHUMB);
     println("ESP32-S3 Demo");
-    println("Version 1.2");
+    println("Version 1.3");
     println("");
     println("Features:");
     println("- IR Blaster");
     println("- X-BE-GONE");
     println("- SD FAT32");
     println("- File Browser");
+    println("- BLE Control");
     println("");
     println("Press to return");
     display_show();
@@ -706,7 +713,7 @@ void game_screen(void) {
 }
 
 void app_main(void) {
-    ESP_LOGI(TAG, "Starting Navi firmware v1.3 - Stack Fix");
+    ESP_LOGI(TAG, "Starting Navi firmware v1.4 - BLE Support Added");
     ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
     
     init_i2c();
@@ -722,13 +729,18 @@ void app_main(void) {
     display_show();
     delay(1000);
     
-    // Initialize NVS for WiFi credentials
+    // Initialize NVS
     esp_err_t ret = nvs_flash_init();
     if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+    
+    // Initialize BLE
+    ESP_LOGI(TAG, "Initializing BLE...");
+    ble_init(ble_process_command);
+    ESP_LOGI(TAG, "BLE initialized as 'Navi-Esp32'");
     
     ir_init(IR_PIN);
     ESP_LOGI(TAG, "IR initialized on pin %d", IR_PIN);
@@ -739,9 +751,12 @@ void app_main(void) {
     
     wifi_menu_init();
     wifi_thingies_init();
+    ble_menu_init();
+    
     menu_init(&main_menu, "Main Menu");
     menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
-menu_add_item_icon(&main_menu, "T", "WiFi Thingies", wifi_thingies_open);
+    menu_add_item_icon(&main_menu, "T", "WiFi Thingies", wifi_thingies_open);
+    menu_add_item_icon(&main_menu, "B", "Bluetooth", ble_menu_open);
     menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
     menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
     menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);
@@ -751,7 +766,7 @@ menu_add_item_icon(&main_menu, "T", "WiFi Thingies", wifi_thingies_open);
     
     menu_init(&settings_menu, "Settings");
     menu_add_item_icon(&settings_menu, "V", "Display", open_display_settings);
-menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
+    menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
     menu_add_item_icon(&settings_menu, "<", "Back", back_to_main);
     
     menu_init(&display_menu, "Display");
@@ -777,6 +792,7 @@ menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
     menu_draw();
     
     ESP_LOGI(TAG, "Initialization complete");
+    ESP_LOGI(TAG, "BLE advertising as 'Navi-Esp32'");
     ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
     
     while(1) {

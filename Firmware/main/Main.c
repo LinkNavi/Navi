@@ -6,7 +6,6 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
-//#include "xbegone_menu.h"
 #include "drivers/display.h"
 #include "menu.h"
 #include "drivers/rotary.h"
@@ -16,6 +15,7 @@
 #include "ir_system.h"
 #include "file_browser.h"
 #include "wifi_menu.h"
+
 static const char *TAG = "NAVI";
 
 #include "driver/rmt_tx.h"
@@ -23,6 +23,7 @@ static const char *TAG = "NAVI";
 
 rmt_channel_handle_t ir_channel = NULL;
 rmt_encoder_t *ir_nec_enc = NULL;
+
 #define I2C_SDA 16
 #define I2C_SCL 17
 #define ROTARY_CLK 5
@@ -33,16 +34,20 @@ rmt_encoder_t *ir_nec_enc = NULL;
 #define SD_CLK  42
 #define SD_CS   41
 #define IR_PIN 4
+
 Menu *current_menu = NULL;
 char status_text[32] = "";
 Rotary encoder;
-Menu main_menu;
-Menu settings_menu;
-Menu display_menu;
-Menu sd_menu;
-Menu ir_menu;
-Menu ir_file_menu;
-Menu files_menu;
+
+// CRITICAL FIX: Move menus to static storage to save stack space
+static Menu main_menu;
+static Menu settings_menu;
+static Menu display_menu;
+static Menu sd_menu;
+static Menu ir_menu;
+static Menu ir_file_menu;
+static Menu files_menu;
+
 uint8_t sd_initialized = 0;
 uint8_t ir_folder_scanned = 0;
 uint8_t current_ir_file_index = 0;
@@ -621,7 +626,6 @@ void ir_test_signal(void) {
     display_show();
     
     ESP_LOGI(TAG, "Sending TCL Roku power toggle");
-    // TCL Roku TV: address 0xEA,0xC7 command 0x17,0xE8
     ir_send_nec_raw(0xEA, 0xC7, 0x17, 0xE8);
     
     delay(500);
@@ -698,7 +702,8 @@ void game_screen(void) {
 }
 
 void app_main(void) {
-    ESP_LOGI(TAG, "Starting Navi firmware v1.3");
+    ESP_LOGI(TAG, "Starting Navi firmware v1.3 - Stack Fix");
+    ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
     
     init_i2c();
     display_init();
@@ -712,13 +717,15 @@ void app_main(void) {
     print("Booting Up!");
     display_show();
     delay(1000);
+    
     // Initialize NVS for WiFi credentials
-esp_err_t ret = nvs_flash_init();
-if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-    ESP_ERROR_CHECK(nvs_flash_erase());
-    ret = nvs_flash_init();
-}
-ESP_ERROR_CHECK(ret);
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+    
     ir_init(IR_PIN);
     ESP_LOGI(TAG, "IR initialized on pin %d", IR_PIN);
     
@@ -726,11 +733,10 @@ ESP_ERROR_CHECK(ret);
     ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
              ROTARY_CLK, ROTARY_DT, ROTARY_SW);
     
-    //xbegone_init_menus();
     wifi_menu_init();
+    
     menu_init(&main_menu, "Main Menu");
-menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
-//    menu_add_item_icon(&main_menu, "X", "X-BE-GONE", xbegone_open_main);
+    menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
     menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
     menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
     menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);
@@ -765,6 +771,7 @@ menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
     menu_draw();
     
     ESP_LOGI(TAG, "Initialization complete");
+    ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
     
     while(1) {
         int8_t dir = rotary_read(&encoder);

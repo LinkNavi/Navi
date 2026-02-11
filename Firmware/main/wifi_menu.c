@@ -1,8 +1,9 @@
-// wifi_menu.c - WiFi menu implementation
+// wifi_menu.c - WiFi menu with rotary encoder text input
 #include "wifi_menu.h"
 #include "drivers/wifi.h"
 #include "drivers/display.h"
 #include "drivers/rotary.h"
+#include "rotary_text_input.h"
 #include "esp_log.h"
 #include <string.h>
 
@@ -13,6 +14,9 @@ extern void back_to_main(void);
 
 Menu wifi_main_menu;
 Menu wifi_scan_menu;
+
+
+static wifi_ap_record_t ap_list[20];
 
 static inline void delay(uint32_t ms) {
     vTaskDelay(pdMS_TO_TICKS(ms));
@@ -70,8 +74,8 @@ static void wifi_connect_saved(void) {
         println("No saved");
         println("credentials!");
         println("");
-        println("Use Scan to");
-        println("configure WiFi");
+        println("Use Manual Setup");
+        println("to configure WiFi");
         println("");
         println("Press to continue");
         display_show();
@@ -141,7 +145,196 @@ static void wifi_disconnect_network(void) {
     back_to_wifi_main();
 }
 
-static void wifi_scan_and_display(void) {  // Changed name
+// NEW: Manual WiFi setup using rotary encoder text input
+static void wifi_manual_setup(void) {
+    char ssid[32] = "";
+    char password[64] = "";
+    
+    // Step 1: Enter SSID
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    println("Manual WiFi Setup");
+    println("");
+    println("Step 1: Enter SSID");
+    println("");
+    println("Press to start");
+    display_show();
+    
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
+        delay(10);
+    }
+    delay(300);
+    
+    if (!text_input_get(&encoder, "WiFi SSID", ssid, sizeof(ssid), NULL)) {
+        // Cancelled
+        back_to_wifi_main();
+        return;
+    }
+    
+    if (strlen(ssid) == 0) {
+        display_clear();
+        set_cursor(2, 10);
+        println("SSID required!");
+        println("");
+        println("Press to continue");
+        display_show();
+        
+        while(!rotary_button_pressed(&encoder)) {
+            rotary_read(&encoder);
+            delay(10);
+        }
+        delay(200);
+        back_to_wifi_main();
+        return;
+    }
+    
+    // Step 2: Enter password
+    display_clear();
+    set_cursor(2, 10);
+    println("Manual WiFi Setup");
+    println("");
+    println("Step 2: Password");
+    println("");
+    println("Press to start");
+    println("(hold to skip)");
+    display_show();
+    
+    uint32_t wait_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
+    uint8_t skip_password = 0;
+    
+    while(1) {
+        rotary_read(&encoder);
+        
+        if (rotary_button_pressed(&encoder)) {
+            break;
+        }
+        
+        // Hold to skip password (open network)
+        if (gpio_get_level((gpio_num_t)encoder.pin_sw) == 0) {
+            if ((xTaskGetTickCount() * portTICK_PERIOD_MS - wait_start) > 1000) {
+                skip_password = 1;
+                break;
+            }
+        }
+        
+        delay(10);
+    }
+    delay(300);
+    
+    if (!skip_password) {
+        if (!text_input_get(&encoder, "WiFi Password", password, sizeof(password), NULL)) {
+            // Cancelled
+            back_to_wifi_main();
+            return;
+        }
+    }
+    
+    // Step 3: Confirm and connect
+    display_clear();
+    set_cursor(2, 10);
+    println("Connect to:");
+    println("");
+    println(ssid);
+    if (strlen(password) > 0) {
+        println("Password: ****");
+    } else {
+        println("(Open network)");
+    }
+    println("");
+    println("Save & Connect?");
+    println("");
+    println("Turn: Yes/No");
+    println("Press: Confirm");
+    display_show();
+    
+    uint8_t confirm = 0;
+    while (1) {
+        int8_t dir = rotary_read(&encoder);
+        if (dir != 0) {
+            confirm = !confirm;
+            display_clear();
+            set_cursor(2, 10);
+            println("Connect to:");
+            println("");
+            println(ssid);
+            if (strlen(password) > 0) {
+                println("Password: ****");
+            } else {
+                println("(Open network)");
+            }
+            println("");
+            println("Save & Connect?");
+            println("");
+            if (confirm) {
+                println("> YES");
+                println("  NO");
+            } else {
+                println("  YES");
+                println("> NO");
+            }
+            display_show();
+        }
+        
+        if (rotary_button_pressed(&encoder)) {
+            delay(200);
+            break;
+        }
+        delay(10);
+    }
+    
+    if (!confirm) {
+        back_to_wifi_main();
+        return;
+    }
+    
+    // Save credentials
+    if (wifi_save_credentials(ssid, password)) {
+        ESP_LOGI(TAG, "Credentials saved");
+    }
+    
+    // Connect
+    display_clear();
+    set_cursor(2, 10);
+    println("Connecting...");
+    println("");
+    println(ssid);
+    display_show();
+    
+    if (wifi_init_sta(ssid, password)) {
+        display_clear();
+        set_cursor(2, 10);
+        println("Connected!");
+        println("");
+        
+        char ip_str[32];
+        wifi_get_ip_string(ip_str, sizeof(ip_str));
+        print("IP: ");
+        println(ip_str);
+    } else {
+        display_clear();
+        set_cursor(2, 10);
+        println("Connection");
+        println("failed!");
+        println("");
+        println("Check SSID and");
+        println("password");
+    }
+    
+    println("");
+    println("Press to continue");
+    display_show();
+    
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_wifi_main();
+}
+
+static void wifi_scan_and_display(void) {
     display_clear();
     set_cursor(2, 10);
     set_font(FONT_TOMTHUMB);
@@ -163,8 +356,7 @@ static void wifi_scan_and_display(void) {  // Changed name
     }
     
     // Scan for networks
-    wifi_ap_record_t ap_list[20];
-    uint16_t ap_count = wifi_scan_networks(ap_list, 20);  // Now calls the wifi.h function
+    uint16_t ap_count = wifi_scan_networks(ap_list, 20);
     
     if (ap_count == 0) {
         display_clear();
@@ -236,10 +428,19 @@ static void wifi_scan_and_display(void) {  // Changed name
             
             set_cursor(4, y + 7);
             
+            // Lock icon for secured networks
+            if (ap_list[i].authmode != WIFI_AUTH_OPEN) {
+                print("L");
+            } else {
+                print("O");
+            }
+            
+            set_cursor(cursor_x + 2, y + 7);
+            
             // Truncate SSID if too long
-            char ssid_display[20];
-            strncpy(ssid_display, (char *)ap_list[i].ssid, 19);
-            ssid_display[19] = '\0';
+            char ssid_display[18];
+            strncpy(ssid_display, (char *)ap_list[i].ssid, 17);
+            ssid_display[17] = '\0';
             
             if (i == selected) {
                 // Inverted text
@@ -266,42 +467,8 @@ static void wifi_scan_and_display(void) {  // Changed name
                     }
                     s++;
                 }
-                
-                // Show signal strength
-                set_cursor(WIDTH - 18, y + 7);
-                char rssi[10];
-                snprintf(rssi, sizeof(rssi), "%ddBm", ap_list[i].rssi);
-                const char *r = rssi;
-                while (*r) {
-                    if (*r >= TomThumb.first && *r <= TomThumb.last) {
-                        const GFXglyph *g = &TomThumb.glyph[*r - TomThumb.first];
-                        const uint8_t *bitmap = TomThumb.bitmap + g->bitmapOffset;
-                        
-                        uint16_t bit_idx = 0;
-                        for (uint8_t yy = 0; yy < g->height; yy++) {
-                            for (uint8_t xx = 0; xx < g->width; xx++) {
-                                if (bitmap[bit_idx >> 3] & (0x80 >> (bit_idx & 7))) {
-                                    int16_t px = cursor_x + g->xOffset + xx;
-                                    int16_t py = cursor_y + g->yOffset + yy;
-                                    if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
-                                        framebuffer[px + (py/8)*WIDTH] &= ~(1 << (py&7));
-                                    }
-                                }
-                                bit_idx++;
-                            }
-                        }
-                        cursor_x += g->xAdvance;
-                    }
-                    r++;
-                }
             } else {
                 print(ssid_display);
-                
-                // Show signal strength
-                set_cursor(WIDTH - 18, y + 7);
-                char rssi[10];
-                snprintf(rssi, sizeof(rssi), "%ddBm", ap_list[i].rssi);
-                print(rssi);
             }
             
             y += 10;
@@ -337,7 +504,84 @@ static void wifi_scan_and_display(void) {  // Changed name
         
         if (rotary_button_pressed(&encoder)) {
             delay(200);
+            
+            // Selected a network - get password if needed
+            char ssid[33];
+            char password[64] = "";
+            strncpy(ssid, (char *)ap_list[selected].ssid, 32);
+            ssid[32] = '\0';
+            
+            if (ap_list[selected].authmode != WIFI_AUTH_OPEN) {
+                // Needs password
+                display_clear();
+                set_cursor(2, 10);
+                println("Enter password");
+                println("for:");
+                println("");
+                println(ssid);
+                println("");
+                println("Press to start");
+                display_show();
+                
+                while(!rotary_button_pressed(&encoder)) {
+                    rotary_read(&encoder);
+                    delay(10);
+                }
+                delay(300);
+                
+                if (!text_input_get(&encoder, "WiFi Password", password, sizeof(password), NULL)) {
+                    // Cancelled
+                    continue;
+                }
+            }
+            
+            // Save and connect
+            wifi_save_credentials(ssid, password);
+            
+            display_clear();
+            set_cursor(2, 10);
+            println("Connecting...");
+            println(ssid);
+            display_show();
+            
+            if (wifi_init_sta(ssid, password)) {
+                display_clear();
+                set_cursor(2, 10);
+                println("Connected!");
+                println("");
+                
+                char ip_str[32];
+                wifi_get_ip_string(ip_str, sizeof(ip_str));
+                print("IP: ");
+                println(ip_str);
+            } else {
+                display_clear();
+                set_cursor(2, 10);
+                println("Failed!");
+            }
+            
+            println("");
+            println("Press to continue");
+            display_show();
+            
+            while(!rotary_button_pressed(&encoder)) {
+                rotary_read(&encoder);
+                delay(10);
+            }
+            delay(200);
             break;
+        }
+        
+        // Hold to exit
+        static uint32_t hold_start = 0;
+        if (gpio_get_level((gpio_num_t)encoder.pin_sw) == 0) {
+            if (hold_start == 0) {
+                hold_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
+            } else if ((xTaskGetTickCount() * portTICK_PERIOD_MS - hold_start) > 1000) {
+                break;
+            }
+        } else {
+            hold_start = 0;
         }
         
         delay(5);
@@ -357,7 +601,8 @@ void wifi_menu_init(void) {
     
     menu_init(&wifi_main_menu, "WiFi");
     menu_add_item_icon(&wifi_main_menu, "C", "Connect", wifi_connect_saved);
-    menu_add_item_icon(&wifi_main_menu, "S", "Scan", wifi_scan_and_display);  // Changed here
+    menu_add_item_icon(&wifi_main_menu, "M", "Manual Setup", wifi_manual_setup);
+    menu_add_item_icon(&wifi_main_menu, "S", "Scan", wifi_scan_and_display);
     menu_add_item_icon(&wifi_main_menu, "I", "Status", wifi_show_status);
     menu_add_item_icon(&wifi_main_menu, "D", "Disconnect", wifi_disconnect_network);
     menu_add_item_icon(&wifi_main_menu, "<", "Back", back_to_main);

@@ -1,9 +1,6 @@
-
 /**
  * IR Signal Database
  * Auto-generated from IR signal files
- * 
- * This header contains organized IR signal data for various devices
  */
 
 #ifndef IR_SIGNALS_H
@@ -15,25 +12,19 @@ extern "C" {
 
 #include <stddef.h>
 
-/**
- * IR Signal structure
- */
 typedef struct {
-    const char* name;       /* Signal name (e.g., "Power", "Vol_up") */
-    const char* protocol;   /* Protocol type (e.g., "NECext", "Samsung32") */
-    const char* address;    /* Address bytes */
-    const char* command;    /* Command bytes */
+    const char* name;
+    const char* protocol;
+    const char* address;
+    const char* command;
 } IRSignal;
 
-/**
- * IR Device structure
- */
 typedef struct {
-    const char* brand;      /* Device brand */
-    const char* model;      /* Device model */
-    const char* category;   /* Device category */
-    const IRSignal* signals;/* Array of signals */
-    size_t signal_count;    /* Number of signals */
+    const char* brand;
+    const char* model;
+    const char* category;
+    const IRSignal* signals;
+    size_t signal_count;
 } IRDevice;
 
 /* ========== IR Signal Data ========== */
@@ -613,7 +604,7 @@ static const IRSignal ELECTRIQ_ELECTRIQ_P15C_V2_SIGNALS[] = {
 /* Category: Air_Purifiers */
 
 /* 3M 3M_Air_Purifier */
-static const IRSignal 3M_3M_AIR_PURIFIER_SIGNALS[] = {
+static const IRSignal DEV_3M_3M_AIR_PURIFIER_SIGNALS[] = {
     {"Power", "NEC", "00 00 00 00", "03 00 00 00"},
     {"Fan_Speed", "NEC", "00 00 00 00", "5C 00 00 00"},
     {"Mute", "NEC", "00 00 00 00", "53 00 00 00"},
@@ -4605,7 +4596,7 @@ static const IRSignal FISHER_FISHER_SLIM_1500_SIGNALS[] = {
 };
 
 /* GPX GPX_HC221B */
-static const IRSignal GPX_GPX_HC221B_SIGNALS[] = {
+static const IRSignal GPX_GPX_HC221B_1_SIGNALS[] = {
     {"Back", "NEC", "00 00 00 00", "04 00 00 00"},
     {"Next", "NEC", "00 00 00 00", "02 00 00 00"},
     {"Rep", "NEC", "00 00 00 00", "05 00 00 00"},
@@ -4788,7 +4779,7 @@ static const IRSignal PHILIPS_PHILIPS_CD_720_SIGNALS[] = {
 };
 
 /* Philips Philips_CD_Player_723 */
-static const IRSignal PHILIPS_PHILIPS_CD_PLAYER_723_SIGNALS[] = {
+static const IRSignal PHILIPS_PHILIPS_CD_PLAYER_723_1_SIGNALS[] = {
     {"POWER", "RC5", "14 00 00 00", "0C 00 00 00"},
     {"Time", "RC5", "14 00 00 00", "0B 00 00 00"},
     {"Program", "RC5", "14 00 00 00", "24 00 00 00"},
@@ -11478,7 +11469,7 @@ static const IRSignal GENERIC_SONY_RM_D10E_SIGNALS[] = {
 /* Category: Miscellaneous */
 
 /* 3D_Clock 3d_clock_color */
-static const IRSignal 3D_CLOCK_3D_CLOCK_COLOR_SIGNALS[] = {
+static const IRSignal DEV_3D_CLOCK_3D_CLOCK_COLOR_SIGNALS[] = {
     {"Power", "NECext", "7B 43 00 00", "10 EF 00 00"},
     {"Return", "NECext", "7B 43 00 00", "11 EE 00 00"},
     {"12_24", "NECext", "7B 43 00 00", "12 ED 00 00"},
@@ -12124,7 +12115,7 @@ static const IRSignal JUKEBOX_ROCK_OLA_CD_JUKEBOX_SIGNALS[] = {
 };
 
 /* LG LG */
-static const IRSignal LG_LG_SIGNALS[] = {
+static const IRSignal LG_LG_1_SIGNALS[] = {
     {"POWER", "NEC", "04 00 00 00", "08 00 00 00"},
     {"Input", "NEC", "04 00 00 00", "0B 00 00 00"},
     {"Ok", "NEC", "04 00 00 00", "44 00 00 00"},
@@ -12486,7 +12477,7 @@ static const IRSignal TESMART_TESMART_KVM_SIGNALS[] = {
 };
 
 /* Terratec Terratec_M3PO */
-static const IRSignal TERRATEC_TERRATEC_M3PO_SIGNALS[] = {
+static const IRSignal TERRATEC_TERRATEC_M3PO_1_SIGNALS[] = {
     {"Info", "RC5X", "0A 00 00 00", "30 00 00 00"},
     {"Mute", "RC5X", "0A 00 00 00", "2F 00 00 00"},
     {"|<", "RC5X", "0A 00 00 00", "12 00 00 00"},
@@ -16096,7 +16087,7 @@ static const IRSignal SONY_SONY_RMT_AH412U_SIGNALS[] = {
 };
 
 /* Sony Sony_MHC-GS300AV */
-static const IRSignal SONY_SONY_MHC_GS300AV_SIGNALS[] = {
+static const IRSignal SONY_SONY_MHC_GS300AV_1_SIGNALS[] = {
     {"Sleep", "SIRC15", "10 00 00 00", "60 00 00 00"},
     {"Balance Left", "SIRC15", "10 00 00 00", "26 00 00 00"},
     {"Balance Right", "SIRC15", "10 00 00 00", "27 00 00 00"},
@@ -16730,7 +16721,7 @@ static const IRSignal ILIVE_ILIVE_SOUNDBAR_SIGNALS[] = {
 /* Category: Speakers */
 
 /* Adastra Adastra_WA215 */
-static const IRSignal ADASTRA_ADASTRA_WA215_SIGNALS[] = {
+static const IRSignal ADASTRA_ADASTRA_WA215_1_SIGNALS[] = {
     {"Power", "NEC", "00 00 00 00", "45 00 00 00"},
     {"Vol_up", "NEC", "00 00 00 00", "19 00 00 00"},
     {"Vol_down", "NEC", "00 00 00 00", "16 00 00 00"},
@@ -16879,7 +16870,7 @@ static const IRSignal CRAIG_CRAIG_CHT904_SIGNALS[] = {
 };
 
 /* Craig Craig_CHT912 */
-static const IRSignal CRAIG_CRAIG_CHT912_SIGNALS[] = {
+static const IRSignal CRAIG_CRAIG_CHT912_1_SIGNALS[] = {
     {"Power", "NEC", "20 00 00 00", "0C 00 00 00"},
     {"Vol_up", "NEC", "20 00 00 00", "02 00 00 00"},
     {"Vol_dn", "NEC", "20 00 00 00", "05 00 00 00"},
@@ -16901,7 +16892,7 @@ static const IRSignal CRAIG_CRAIG_CHT912_SIGNALS[] = {
 };
 
 /* Craig Craig_CHT921 */
-static const IRSignal CRAIG_CRAIG_CHT921_SIGNALS[] = {
+static const IRSignal CRAIG_CRAIG_CHT921_1_SIGNALS[] = {
     {"Power", "NEC", "00 00 00 00", "12 00 00 00"},
     {"Vol_up", "NEC", "00 00 00 00", "03 00 00 00"},
     {"Vol_dn", "NEC", "00 00 00 00", "01 00 00 00"},
@@ -16918,7 +16909,7 @@ static const IRSignal CRAIG_CRAIG_CHT921_SIGNALS[] = {
 };
 
 /* Craig Craig_CHT939 */
-static const IRSignal CRAIG_CRAIG_CHT939_SIGNALS[] = {
+static const IRSignal CRAIG_CRAIG_CHT939_1_SIGNALS[] = {
     {"Power", "NEC", "00 00 00 00", "12 00 00 00"},
     {"Vol_up", "NEC", "00 00 00 00", "1F 00 00 00"},
     {"Vol_dn", "NEC", "00 00 00 00", "09 00 00 00"},
@@ -17010,14 +17001,14 @@ static const IRSignal EDIFIER_EDIFIER_R1280DB_SIGNALS[] = {
 };
 
 /* Edifier Edifier_R1280T */
-static const IRSignal EDIFIER_EDIFIER_R1280T_SIGNALS[] = {
+static const IRSignal EDIFIER_EDIFIER_R1280T_1_SIGNALS[] = {
     {"Down", "NECext", "10 E7 00 00", "4D B2 00 00"},
     {"Up", "NECext", "10 E7 00 00", "3C C3 00 00"},
     {"Mute", "NECext", "10 E7 00 00", "2B D4 00 00"},
 };
 
 /* Edifier Edifier_R1700BT */
-static const IRSignal EDIFIER_EDIFIER_R1700BT_SIGNALS[] = {
+static const IRSignal EDIFIER_EDIFIER_R1700BT_1_SIGNALS[] = {
     {"Vol_up", "NECext", "10 E7 00 00", "2B D4 00 00"},
     {"Vol_dn", "NECext", "10 E7 00 00", "3C C3 00 00"},
     {"Mute", "NECext", "10 E7 00 00", "1A E5 00 00"},
@@ -17042,7 +17033,7 @@ static const IRSignal EDIFIER_EDIFIER_R1700BTS_SIGNALS[] = {
 };
 
 /* Edifier Edifier_R1855DB */
-static const IRSignal EDIFIER_EDIFIER_R1855DB_SIGNALS[] = {
+static const IRSignal EDIFIER_EDIFIER_R1855DB_1_SIGNALS[] = {
     {"V_up", "NECext", "10 E7 00 00", "06 F9 00 00"},
     {"V_dwn", "NECext", "10 E7 00 00", "47 B8 00 00"},
     {"Bt", "NECext", "10 E7 00 00", "5C A3 00 00"},
@@ -17567,7 +17558,7 @@ static const IRSignal OTTOLIVES_ROHS_BL_XK01_SIGNALS[] = {
 };
 
 /* Panasonic Panasonic_N2QAYB000145 */
-static const IRSignal PANASONIC_PANASONIC_N2QAYB000145_SIGNALS[] = {
+static const IRSignal PANASONIC_PANASONIC_N2QAYB000145_1_SIGNALS[] = {
     {"Power", "Kaseikyo", "AC 02 20 00", "D1 03 00 00"},
     {"Play_Pause", "Kaseikyo", "AA 02 20 00", "A0 00 00 00"},
     {"Stop", "Kaseikyo", "AC 02 20 00", "01 00 00 00"},
@@ -17589,7 +17580,7 @@ static const IRSignal PANASONIC_PANASONIC_N2QAYB000145_SIGNALS[] = {
 };
 
 /* Panasonic Panasonic_SA-PM602 */
-static const IRSignal PANASONIC_PANASONIC_SA_PM602_SIGNALS[] = {
+static const IRSignal PANASONIC_PANASONIC_SA_PM602_1_SIGNALS[] = {
     {"Power", "Kaseikyo", "AC 02 20 00", "D1 03 00 00"},
     {"Vol_up", "Kaseikyo", "A0 02 20 00", "00 02 00 00"},
     {"Vol_dn", "Kaseikyo", "A0 02 20 00", "10 02 00 00"},
@@ -17613,7 +17604,7 @@ static const IRSignal PANASONIC_PANASONIC_SA_PM602_SIGNALS[] = {
 };
 
 /* Panasonic Panasonic_SC-PMX92-94 */
-static const IRSignal PANASONIC_PANASONIC_SC_PMX92_94_SIGNALS[] = {
+static const IRSignal PANASONIC_PANASONIC_SC_PMX92_94_1_SIGNALS[] = {
     {"On_off", "Kaseikyo", "AC 02 20 00", "D1 03 00 00"},
     {"Vol_up", "Kaseikyo", "A0 02 20 00", "00 02 00 00"},
     {"Vol_down", "Kaseikyo", "A0 02 20 00", "10 02 00 00"},
@@ -20922,7 +20913,7 @@ static const IRSignal KRAFT_KRAFT_KTV_SIGNALS[] = {
 };
 
 /* LG LG */
-static const IRSignal LG_LG_SIGNALS[] = {
+static const IRSignal LG_LG_2_SIGNALS[] = {
     {"Power", "NEC", "04 00 00 00", "08 00 00 00"},
     {"Mute", "NEC", "04 00 00 00", "09 00 00 00"},
     {"Vol_up", "NEC", "04 00 00 00", "02 00 00 00"},
@@ -29600,7 +29591,7 @@ static const IRSignal VIEWSONIC_VIEWSONIC_VIEWBOARD_SIGNALS[] = {
 
 /* Unknown-brand FlightBall */
 static const IRSignal UNKNOWN_BRAND_FLIGHTBALL_SIGNALS[] = {
-    {"POWER/SPEED", "NEC", "01 00 00 00", "43 00 00 00"},
+    {"POWER/SPEED", "NEC", "00 00 00 00", "43 00 00 00"},
 };
 
 /* Category: Universal_TV_Remotes */
@@ -30638,7 +30629,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Zenith", "Zenith_AC", "ACs", ZENITH_ZENITH_AC_SIGNALS, sizeof(ZENITH_ZENITH_AC_SIGNALS) / sizeof(IRSignal)},
     {"Zephir", "Zephir_ZPO9001H_AC", "ACs", ZEPHIR_ZEPHIR_ZPO9001H_AC_SIGNALS, sizeof(ZEPHIR_ZEPHIR_ZPO9001H_AC_SIGNALS) / sizeof(IRSignal)},
     {"electriQ", "electriQ_P15C-V2", "ACs", ELECTRIQ_ELECTRIQ_P15C_V2_SIGNALS, sizeof(ELECTRIQ_ELECTRIQ_P15C_V2_SIGNALS) / sizeof(IRSignal)},
-    {"3M", "3M_Air_Purifier", "Air_Purifiers", 3M_3M_AIR_PURIFIER_SIGNALS, sizeof(3M_3M_AIR_PURIFIER_SIGNALS) / sizeof(IRSignal)},
+    {"3M", "3M_Air_Purifier", "Air_Purifiers", DEV_3M_3M_AIR_PURIFIER_SIGNALS, sizeof(DEV_3M_3M_AIR_PURIFIER_SIGNALS) / sizeof(IRSignal)},
     {"IQAir", "IQAir_GC_Series", "Air_Purifiers", IQAIR_IQAIR_GC_SERIES_SIGNALS, sizeof(IQAIR_IQAIR_GC_SERIES_SIGNALS) / sizeof(IRSignal)},
     {"Rohnson", "Rohnson_R-9400", "Air_Purifiers", ROHNSON_ROHNSON_R_9400_SIGNALS, sizeof(ROHNSON_ROHNSON_R_9400_SIGNALS) / sizeof(IRSignal)},
     {"Shark", "Shark_Air_Purifier", "Air_Purifiers", SHARK_SHARK_AIR_PURIFIER_SIGNALS, sizeof(SHARK_SHARK_AIR_PURIFIER_SIGNALS) / sizeof(IRSignal)},
@@ -30787,7 +30778,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Aiwa", "AIWA_NSXR71", "CD_Players", AIWA_AIWA_NSXR71_SIGNALS, sizeof(AIWA_AIWA_NSXR71_SIGNALS) / sizeof(IRSignal)},
     {"Denon", "Denon_RC_1199", "CD_Players", DENON_DENON_RC_1199_SIGNALS, sizeof(DENON_DENON_RC_1199_SIGNALS) / sizeof(IRSignal)},
     {"Fisher", "Fisher_SLIM-1500", "CD_Players", FISHER_FISHER_SLIM_1500_SIGNALS, sizeof(FISHER_FISHER_SLIM_1500_SIGNALS) / sizeof(IRSignal)},
-    {"GPX", "GPX_HC221B", "CD_Players", GPX_GPX_HC221B_SIGNALS, sizeof(GPX_GPX_HC221B_SIGNALS) / sizeof(IRSignal)},
+    {"GPX", "GPX_HC221B", "CD_Players", GPX_GPX_HC221B_1_SIGNALS, sizeof(GPX_GPX_HC221B_1_SIGNALS) / sizeof(IRSignal)},
     {"GPX", "GPX_cd_radio", "CD_Players", GPX_GPX_CD_RADIO_SIGNALS, sizeof(GPX_GPX_CD_RADIO_SIGNALS) / sizeof(IRSignal)},
     {"LG", "LG", "CD_Players", LG_LG_SIGNALS, sizeof(LG_LG_SIGNALS) / sizeof(IRSignal)},
     {"Onkyo", "Onkyo_DX-7333", "CD_Players", ONKYO_ONKYO_DX_7333_SIGNALS, sizeof(ONKYO_ONKYO_DX_7333_SIGNALS) / sizeof(IRSignal)},
@@ -30796,7 +30787,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Panasonic", "Panasonic_SC-HC58", "CD_Players", PANASONIC_PANASONIC_SC_HC58_SIGNALS, sizeof(PANASONIC_PANASONIC_SC_HC58_SIGNALS) / sizeof(IRSignal)},
     {"Panasonic", "Panasonic_SC-PM254", "CD_Players", PANASONIC_PANASONIC_SC_PM254_SIGNALS, sizeof(PANASONIC_PANASONIC_SC_PM254_SIGNALS) / sizeof(IRSignal)},
     {"Philips", "Philips_CD_720", "CD_Players", PHILIPS_PHILIPS_CD_720_SIGNALS, sizeof(PHILIPS_PHILIPS_CD_720_SIGNALS) / sizeof(IRSignal)},
-    {"Philips", "Philips_CD_Player_723", "CD_Players", PHILIPS_PHILIPS_CD_PLAYER_723_SIGNALS, sizeof(PHILIPS_PHILIPS_CD_PLAYER_723_SIGNALS) / sizeof(IRSignal)},
+    {"Philips", "Philips_CD_Player_723", "CD_Players", PHILIPS_PHILIPS_CD_PLAYER_723_1_SIGNALS, sizeof(PHILIPS_PHILIPS_CD_PLAYER_723_1_SIGNALS) / sizeof(IRSignal)},
     {"Rockola", "Rockola_juke", "CD_Players", ROCKOLA_ROCKOLA_JUKE_SIGNALS, sizeof(ROCKOLA_ROCKOLA_JUKE_SIGNALS) / sizeof(IRSignal)},
     {"Sony", "SONY_minidisk-deck", "CD_Players", SONY_SONY_MINIDISK_DECK_SIGNALS, sizeof(SONY_SONY_MINIDISK_DECK_SIGNALS) / sizeof(IRSignal)},
     {"Sony", "Sony_CFD-S35CP", "CD_Players", SONY_SONY_CFD_S35CP_SIGNALS, sizeof(SONY_SONY_CFD_S35CP_SIGNALS) / sizeof(IRSignal)},
@@ -31107,7 +31098,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Pioneer", "Pioneer_CU-DV027", "Laserdisc", PIONEER_PIONEER_CU_DV027_SIGNALS, sizeof(PIONEER_PIONEER_CU_DV027_SIGNALS) / sizeof(IRSignal)},
     {"Pioneer", "Pioneer_Elite_CLD_99", "Laserdisc", PIONEER_PIONEER_ELITE_CLD_99_SIGNALS, sizeof(PIONEER_PIONEER_ELITE_CLD_99_SIGNALS) / sizeof(IRSignal)},
     {"Generic", "Sony_RM-D10E", "MiniDisc", GENERIC_SONY_RM_D10E_SIGNALS, sizeof(GENERIC_SONY_RM_D10E_SIGNALS) / sizeof(IRSignal)},
-    {"3D_Clock", "3d_clock_color", "Miscellaneous", 3D_CLOCK_3D_CLOCK_COLOR_SIGNALS, sizeof(3D_CLOCK_3D_CLOCK_COLOR_SIGNALS) / sizeof(IRSignal)},
+    {"3D_Clock", "3d_clock_color", "Miscellaneous", DEV_3D_CLOCK_3D_CLOCK_COLOR_SIGNALS, sizeof(DEV_3D_CLOCK_3D_CLOCK_COLOR_SIGNALS) / sizeof(IRSignal)},
     {"AMI", "AMI_JukeboxVolume", "Miscellaneous", AMI_AMI_JUKEBOXVOLUME_SIGNALS, sizeof(AMI_AMI_JUKEBOXVOLUME_SIGNALS) / sizeof(IRSignal)},
     {"AMI", "AMI_Jukebox_Full", "Miscellaneous", AMI_AMI_JUKEBOX_FULL_SIGNALS, sizeof(AMI_AMI_JUKEBOX_FULL_SIGNALS) / sizeof(IRSignal)},
     {"AMI", "Ami_jukebox", "Miscellaneous", AMI_AMI_JUKEBOX_SIGNALS, sizeof(AMI_AMI_JUKEBOX_SIGNALS) / sizeof(IRSignal)},
@@ -31141,7 +31132,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Gym_HIIT", "GX-IR03_Clock", "Miscellaneous", GYM_HIIT_GX_IR03_CLOCK_SIGNALS, sizeof(GYM_HIIT_GX_IR03_CLOCK_SIGNALS) / sizeof(IRSignal)},
     {"JETTools", "JETTools_AFS-1000B_Air_Filter", "Miscellaneous", JETTOOLS_JETTOOLS_AFS_1000B_AIR_FILTER_SIGNALS, sizeof(JETTOOLS_JETTOOLS_AFS_1000B_AIR_FILTER_SIGNALS) / sizeof(IRSignal)},
     {"Jukebox", "Rock_ola_CD_Jukebox", "Miscellaneous", JUKEBOX_ROCK_OLA_CD_JUKEBOX_SIGNALS, sizeof(JUKEBOX_ROCK_OLA_CD_JUKEBOX_SIGNALS) / sizeof(IRSignal)},
-    {"LG", "LG", "Miscellaneous", LG_LG_SIGNALS, sizeof(LG_LG_SIGNALS) / sizeof(IRSignal)},
+    {"LG", "LG", "Miscellaneous", LG_LG_1_SIGNALS, sizeof(LG_LG_1_SIGNALS) / sizeof(IRSignal)},
     {"LightMyBricks", "lightmybricks", "Miscellaneous", LIGHTMYBRICKS_LIGHTMYBRICKS_SIGNALS, sizeof(LIGHTMYBRICKS_LIGHTMYBRICKS_SIGNALS) / sizeof(IRSignal)},
     {"Logitech", "Logitech_Conference_R-R007", "Miscellaneous", LOGITECH_LOGITECH_CONFERENCE_R_R007_SIGNALS, sizeof(LOGITECH_LOGITECH_CONFERENCE_R_R007_SIGNALS) / sizeof(IRSignal)},
     {"Logitech", "Logitech_Squeezebox_X-ia4_815-000058", "Miscellaneous", LOGITECH_LOGITECH_SQUEEZEBOX_X_IA4_815_000058_SIGNALS, sizeof(LOGITECH_LOGITECH_SQUEEZEBOX_X_IA4_815_000058_SIGNALS) / sizeof(IRSignal)},
@@ -31163,7 +31154,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Sony_Experimental_unlock", "Take2", "Miscellaneous", SONY_EXPERIMENTAL_UNLOCK_TAKE2_SIGNALS, sizeof(SONY_EXPERIMENTAL_UNLOCK_TAKE2_SIGNALS) / sizeof(IRSignal)},
     {"Sony_Experimental_unlock", "Unlock_0533", "Miscellaneous", SONY_EXPERIMENTAL_UNLOCK_UNLOCK_0533_SIGNALS, sizeof(SONY_EXPERIMENTAL_UNLOCK_UNLOCK_0533_SIGNALS) / sizeof(IRSignal)},
     {"TESmart", "TESmart_KVM", "Miscellaneous", TESMART_TESMART_KVM_SIGNALS, sizeof(TESMART_TESMART_KVM_SIGNALS) / sizeof(IRSignal)},
-    {"Terratec", "Terratec_M3PO", "Miscellaneous", TERRATEC_TERRATEC_M3PO_SIGNALS, sizeof(TERRATEC_TERRATEC_M3PO_SIGNALS) / sizeof(IRSignal)},
+    {"Terratec", "Terratec_M3PO", "Miscellaneous", TERRATEC_TERRATEC_M3PO_1_SIGNALS, sizeof(TERRATEC_TERRATEC_M3PO_1_SIGNALS) / sizeof(IRSignal)},
     {"Tomlov", "TOMLOV_DM201_Digital_Microscope", "Miscellaneous", TOMLOV_TOMLOV_DM201_DIGITAL_MICROSCOPE_SIGNALS, sizeof(TOMLOV_TOMLOV_DM201_DIGITAL_MICROSCOPE_SIGNALS) / sizeof(IRSignal)},
     {"Topping_Amplifier", "Topping_DX3_Pro-Amplifier", "Miscellaneous", TOPPING_AMPLIFIER_TOPPING_DX3_PRO_AMPLIFIER_SIGNALS, sizeof(TOPPING_AMPLIFIER_TOPPING_DX3_PRO_AMPLIFIER_SIGNALS) / sizeof(IRSignal)},
     {"Urevo", "Urevo_Treadmill_UR9TM0011", "Miscellaneous", UREVO_UREVO_TREADMILL_UR9TM0011_SIGNALS, sizeof(UREVO_UREVO_TREADMILL_UR9TM0011_SIGNALS) / sizeof(IRSignal)},
@@ -31349,7 +31340,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Sennheiser", "Sennheiser_Ambeo_Soundbar", "SoundBars", SENNHEISER_SENNHEISER_AMBEO_SOUNDBAR_SIGNALS, sizeof(SENNHEISER_SENNHEISER_AMBEO_SOUNDBAR_SIGNALS) / sizeof(IRSignal)},
     {"Sonos", "Sonos_ARC_Beam_Playbar_Playbase", "SoundBars", SONOS_SONOS_ARC_BEAM_PLAYBAR_PLAYBASE_SIGNALS, sizeof(SONOS_SONOS_ARC_BEAM_PLAYBAR_PLAYBASE_SIGNALS) / sizeof(IRSignal)},
     {"Sony", "SONY_RMT-AH412U", "SoundBars", SONY_SONY_RMT_AH412U_SIGNALS, sizeof(SONY_SONY_RMT_AH412U_SIGNALS) / sizeof(IRSignal)},
-    {"Sony", "Sony_MHC-GS300AV", "SoundBars", SONY_SONY_MHC_GS300AV_SIGNALS, sizeof(SONY_SONY_MHC_GS300AV_SIGNALS) / sizeof(IRSignal)},
+    {"Sony", "Sony_MHC-GS300AV", "SoundBars", SONY_SONY_MHC_GS300AV_1_SIGNALS, sizeof(SONY_SONY_MHC_GS300AV_1_SIGNALS) / sizeof(IRSignal)},
     {"Sony", "Sony_Old_XBR", "SoundBars", SONY_SONY_OLD_XBR_SIGNALS, sizeof(SONY_SONY_OLD_XBR_SIGNALS) / sizeof(IRSignal)},
     {"Sony", "Sony_RDH-GTK33IP", "SoundBars", SONY_SONY_RDH_GTK33IP_SIGNALS, sizeof(SONY_SONY_RDH_GTK33IP_SIGNALS) / sizeof(IRSignal)},
     {"Sony", "Sony_Soundbar_HT-XT3", "SoundBars", SONY_SONY_SOUNDBAR_HT_XT3_SIGNALS, sizeof(SONY_SONY_SOUNDBAR_HT_XT3_SIGNALS) / sizeof(IRSignal)},
@@ -31375,7 +31366,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Yarra", "Yarra_3DX", "SoundBars", YARRA_YARRA_3DX_SIGNALS, sizeof(YARRA_YARRA_3DX_SIGNALS) / sizeof(IRSignal)},
     {"iLive", "iLive_ITP280B_Remote", "SoundBars", ILIVE_ILIVE_ITP280B_REMOTE_SIGNALS, sizeof(ILIVE_ILIVE_ITP280B_REMOTE_SIGNALS) / sizeof(IRSignal)},
     {"iLive", "iLive_Soundbar", "SoundBars", ILIVE_ILIVE_SOUNDBAR_SIGNALS, sizeof(ILIVE_ILIVE_SOUNDBAR_SIGNALS) / sizeof(IRSignal)},
-    {"Adastra", "Adastra_WA215", "Speakers", ADASTRA_ADASTRA_WA215_SIGNALS, sizeof(ADASTRA_ADASTRA_WA215_SIGNALS) / sizeof(IRSignal)},
+    {"Adastra", "Adastra_WA215", "Speakers", ADASTRA_ADASTRA_WA215_1_SIGNALS, sizeof(ADASTRA_ADASTRA_WA215_1_SIGNALS) / sizeof(IRSignal)},
     {"Audioengine", "Audioengine_a5", "Speakers", AUDIOENGINE_AUDIOENGINE_A5_SIGNALS, sizeof(AUDIOENGINE_AUDIOENGINE_A5_SIGNALS) / sizeof(IRSignal)},
     {"Biseoamz", "Biseoamz_DY29S", "Speakers", BISEOAMZ_BISEOAMZ_DY29S_SIGNALS, sizeof(BISEOAMZ_BISEOAMZ_DY29S_SIGNALS) / sizeof(IRSignal)},
     {"Bowers_and_Wilkins", "Bowers_and_Wilkins_Zeppelin_Air_(with_30-pin_connector)", "Speakers", BOWERS_AND_WILKINS_BOWERS_AND_WILKINS_ZEPPELIN_AIR__WITH_30_PIN_CONNECTOR__SIGNALS, sizeof(BOWERS_AND_WILKINS_BOWERS_AND_WILKINS_ZEPPELIN_AIR__WITH_30_PIN_CONNECTOR__SIGNALS) / sizeof(IRSignal)},
@@ -31383,18 +31374,18 @@ static const IRDevice IR_DEVICES[] = {
     {"Como_Audio", "Como_audio", "Speakers", COMO_AUDIO_COMO_AUDIO_SIGNALS, sizeof(COMO_AUDIO_COMO_AUDIO_SIGNALS) / sizeof(IRSignal)},
     {"Craig", "Craig_CHT729", "Speakers", CRAIG_CRAIG_CHT729_SIGNALS, sizeof(CRAIG_CRAIG_CHT729_SIGNALS) / sizeof(IRSignal)},
     {"Craig", "Craig_CHT904", "Speakers", CRAIG_CRAIG_CHT904_SIGNALS, sizeof(CRAIG_CRAIG_CHT904_SIGNALS) / sizeof(IRSignal)},
-    {"Craig", "Craig_CHT912", "Speakers", CRAIG_CRAIG_CHT912_SIGNALS, sizeof(CRAIG_CRAIG_CHT912_SIGNALS) / sizeof(IRSignal)},
-    {"Craig", "Craig_CHT921", "Speakers", CRAIG_CRAIG_CHT921_SIGNALS, sizeof(CRAIG_CRAIG_CHT921_SIGNALS) / sizeof(IRSignal)},
-    {"Craig", "Craig_CHT939", "Speakers", CRAIG_CRAIG_CHT939_SIGNALS, sizeof(CRAIG_CRAIG_CHT939_SIGNALS) / sizeof(IRSignal)},
+    {"Craig", "Craig_CHT912", "Speakers", CRAIG_CRAIG_CHT912_1_SIGNALS, sizeof(CRAIG_CRAIG_CHT912_1_SIGNALS) / sizeof(IRSignal)},
+    {"Craig", "Craig_CHT921", "Speakers", CRAIG_CRAIG_CHT921_1_SIGNALS, sizeof(CRAIG_CRAIG_CHT921_1_SIGNALS) / sizeof(IRSignal)},
+    {"Craig", "Craig_CHT939", "Speakers", CRAIG_CRAIG_CHT939_1_SIGNALS, sizeof(CRAIG_CRAIG_CHT939_1_SIGNALS) / sizeof(IRSignal)},
     {"Creative", "Creative_z5400", "Speakers", CREATIVE_CREATIVE_Z5400_SIGNALS, sizeof(CREATIVE_CREATIVE_Z5400_SIGNALS) / sizeof(IRSignal)},
     {"DollarTec_BT5AmpBoard", "DollarTec_BT5AmpBoard", "Speakers", DOLLARTEC_BT5AMPBOARD_DOLLARTEC_BT5AMPBOARD_SIGNALS, sizeof(DOLLARTEC_BT5AMPBOARD_DOLLARTEC_BT5AMPBOARD_SIGNALS) / sizeof(IRSignal)},
     {"Eastern", "EASTERN_DA_9000", "Speakers", EASTERN_EASTERN_DA_9000_SIGNALS, sizeof(EASTERN_EASTERN_DA_9000_SIGNALS) / sizeof(IRSignal)},
     {"Edifier", "Edifier_AirPulse_A80", "Speakers", EDIFIER_EDIFIER_AIRPULSE_A80_SIGNALS, sizeof(EDIFIER_EDIFIER_AIRPULSE_A80_SIGNALS) / sizeof(IRSignal)},
     {"Edifier", "Edifier_R1280DB", "Speakers", EDIFIER_EDIFIER_R1280DB_SIGNALS, sizeof(EDIFIER_EDIFIER_R1280DB_SIGNALS) / sizeof(IRSignal)},
-    {"Edifier", "Edifier_R1280T", "Speakers", EDIFIER_EDIFIER_R1280T_SIGNALS, sizeof(EDIFIER_EDIFIER_R1280T_SIGNALS) / sizeof(IRSignal)},
-    {"Edifier", "Edifier_R1700BT", "Speakers", EDIFIER_EDIFIER_R1700BT_SIGNALS, sizeof(EDIFIER_EDIFIER_R1700BT_SIGNALS) / sizeof(IRSignal)},
+    {"Edifier", "Edifier_R1280T", "Speakers", EDIFIER_EDIFIER_R1280T_1_SIGNALS, sizeof(EDIFIER_EDIFIER_R1280T_1_SIGNALS) / sizeof(IRSignal)},
+    {"Edifier", "Edifier_R1700BT", "Speakers", EDIFIER_EDIFIER_R1700BT_1_SIGNALS, sizeof(EDIFIER_EDIFIER_R1700BT_1_SIGNALS) / sizeof(IRSignal)},
     {"Edifier", "Edifier_R1700BTs", "Speakers", EDIFIER_EDIFIER_R1700BTS_SIGNALS, sizeof(EDIFIER_EDIFIER_R1700BTS_SIGNALS) / sizeof(IRSignal)},
-    {"Edifier", "Edifier_R1855DB", "Speakers", EDIFIER_EDIFIER_R1855DB_SIGNALS, sizeof(EDIFIER_EDIFIER_R1855DB_SIGNALS) / sizeof(IRSignal)},
+    {"Edifier", "Edifier_R1855DB", "Speakers", EDIFIER_EDIFIER_R1855DB_1_SIGNALS, sizeof(EDIFIER_EDIFIER_R1855DB_1_SIGNALS) / sizeof(IRSignal)},
     {"Edifier", "Edifier_R2800", "Speakers", EDIFIER_EDIFIER_R2800_SIGNALS, sizeof(EDIFIER_EDIFIER_R2800_SIGNALS) / sizeof(IRSignal)},
     {"Edifier", "Edifier_RC10D1_R2730DB", "Speakers", EDIFIER_EDIFIER_RC10D1_R2730DB_SIGNALS, sizeof(EDIFIER_EDIFIER_RC10D1_R2730DB_SIGNALS) / sizeof(IRSignal)},
     {"Edifier", "Edifier_RC17A", "Speakers", EDIFIER_EDIFIER_RC17A_SIGNALS, sizeof(EDIFIER_EDIFIER_RC17A_SIGNALS) / sizeof(IRSignal)},
@@ -31424,9 +31415,9 @@ static const IRDevice IR_DEVICES[] = {
     {"Microlab", "Microlab_SOLO11", "Speakers", MICROLAB_MICROLAB_SOLO11_SIGNALS, sizeof(MICROLAB_MICROLAB_SOLO11_SIGNALS) / sizeof(IRSignal)},
     {"Naim", "Naim_Muso", "Speakers", NAIM_NAIM_MUSO_SIGNALS, sizeof(NAIM_NAIM_MUSO_SIGNALS) / sizeof(IRSignal)},
     {"Ottolives", "ROHS_BL_XK01", "Speakers", OTTOLIVES_ROHS_BL_XK01_SIGNALS, sizeof(OTTOLIVES_ROHS_BL_XK01_SIGNALS) / sizeof(IRSignal)},
-    {"Panasonic", "Panasonic_N2QAYB000145", "Speakers", PANASONIC_PANASONIC_N2QAYB000145_SIGNALS, sizeof(PANASONIC_PANASONIC_N2QAYB000145_SIGNALS) / sizeof(IRSignal)},
-    {"Panasonic", "Panasonic_SA-PM602", "Speakers", PANASONIC_PANASONIC_SA_PM602_SIGNALS, sizeof(PANASONIC_PANASONIC_SA_PM602_SIGNALS) / sizeof(IRSignal)},
-    {"Panasonic", "Panasonic_SC-PMX92-94", "Speakers", PANASONIC_PANASONIC_SC_PMX92_94_SIGNALS, sizeof(PANASONIC_PANASONIC_SC_PMX92_94_SIGNALS) / sizeof(IRSignal)},
+    {"Panasonic", "Panasonic_N2QAYB000145", "Speakers", PANASONIC_PANASONIC_N2QAYB000145_1_SIGNALS, sizeof(PANASONIC_PANASONIC_N2QAYB000145_1_SIGNALS) / sizeof(IRSignal)},
+    {"Panasonic", "Panasonic_SA-PM602", "Speakers", PANASONIC_PANASONIC_SA_PM602_1_SIGNALS, sizeof(PANASONIC_PANASONIC_SA_PM602_1_SIGNALS) / sizeof(IRSignal)},
+    {"Panasonic", "Panasonic_SC-PMX92-94", "Speakers", PANASONIC_PANASONIC_SC_PMX92_94_1_SIGNALS, sizeof(PANASONIC_PANASONIC_SC_PMX92_94_1_SIGNALS) / sizeof(IRSignal)},
     {"Q_Acoustics", "Q_Acoustics_M40", "Speakers", Q_ACOUSTICS_Q_ACOUSTICS_M40_SIGNALS, sizeof(Q_ACOUSTICS_Q_ACOUSTICS_M40_SIGNALS) / sizeof(IRSignal)},
     {"Ruark", "Ruark_MR1", "Speakers", RUARK_RUARK_MR1_SIGNALS, sizeof(RUARK_RUARK_MR1_SIGNALS) / sizeof(IRSignal)},
     {"Sangean", "Sangean_RC30", "Speakers", SANGEAN_SANGEAN_RC30_SIGNALS, sizeof(SANGEAN_SANGEAN_RC30_SIGNALS) / sizeof(IRSignal)},
@@ -31547,7 +31538,7 @@ static const IRDevice IR_DEVICES[] = {
     {"Kendo", "Kendo_CP20M36VT", "TVs", KENDO_KENDO_CP20M36VT_SIGNALS, sizeof(KENDO_KENDO_CP20M36VT_SIGNALS) / sizeof(IRSignal)},
     {"Kogan", "Kogan_KALED50XU9210STB", "TVs", KOGAN_KOGAN_KALED50XU9210STB_SIGNALS, sizeof(KOGAN_KOGAN_KALED50XU9210STB_SIGNALS) / sizeof(IRSignal)},
     {"Kraft", "KRAFT_KTV", "TVs", KRAFT_KRAFT_KTV_SIGNALS, sizeof(KRAFT_KRAFT_KTV_SIGNALS) / sizeof(IRSignal)},
-    {"LG", "LG", "TVs", LG_LG_SIGNALS, sizeof(LG_LG_SIGNALS) / sizeof(IRSignal)},
+    {"LG", "LG", "TVs", LG_LG_2_SIGNALS, sizeof(LG_LG_2_SIGNALS) / sizeof(IRSignal)},
     {"LG", "LG_24LJ4840", "TVs", LG_LG_24LJ4840_SIGNALS, sizeof(LG_LG_24LJ4840_SIGNALS) / sizeof(IRSignal)},
     {"LG", "LG_27GR95QE_TV", "TVs", LG_LG_27GR95QE_TV_SIGNALS, sizeof(LG_LG_27GR95QE_TV_SIGNALS) / sizeof(IRSignal)},
     {"LG", "LG_32LF650V", "TVs", LG_LG_32LF650V_SIGNALS, sizeof(LG_LG_32LF650V_SIGNALS) / sizeof(IRSignal)},
@@ -31876,164 +31867,11 @@ static const IRDevice IR_DEVICES[] = {
 
 #define IR_DEVICE_COUNT 1280
 
-/* Category enum for easy filtering */
-typedef enum {
-    IR_CATEGORY_ACS = 0,
-    IR_CATEGORY_AIR_PURIFIERS = 1,
-    IR_CATEGORY_AUDIO_AND_VIDEO_RECEIVERS = 2,
-    IR_CATEGORY_BIDET = 3,
-    IR_CATEGORY_BLU_RAY = 4,
-    IR_CATEGORY_CCTV = 5,
-    IR_CATEGORY_CD_PLAYERS = 6,
-    IR_CATEGORY_CABLE_BOXES = 7,
-    IR_CATEGORY_CAMERAS = 8,
-    IR_CATEGORY_CLOCKS = 9,
-    IR_CATEGORY_COMPUTERS = 10,
-    IR_CATEGORY_CONSOLES = 11,
-    IR_CATEGORY_CONVERTERS = 12,
-    IR_CATEGORY_DVB_T = 13,
-    IR_CATEGORY_DVD_PLAYERS = 14,
-    IR_CATEGORY_DIGITAL_SIGNS = 15,
-    IR_CATEGORY_FANS = 16,
-    IR_CATEGORY_FIREPLACES = 17,
-    IR_CATEGORY_HEAD_UNITS = 18,
-    IR_CATEGORY_HEATERS = 19,
-    IR_CATEGORY_HUMIDIFIERS = 20,
-    IR_CATEGORY_LED_LIGHTING = 21,
-    IR_CATEGORY_LASERDISC = 22,
-    IR_CATEGORY_MINIDISC = 23,
-    IR_CATEGORY_MISCELLANEOUS = 24,
-    IR_CATEGORY_MONITORS = 25,
-    IR_CATEGORY_MULTIMEDIA = 26,
-    IR_CATEGORY_PICTURE_FRAMES = 27,
-    IR_CATEGORY_PROJECTORS = 28,
-    IR_CATEGORY_SOUNDBARS = 29,
-    IR_CATEGORY_SPEAKERS = 30,
-    IR_CATEGORY_STREAMING_DEVICES = 31,
-    IR_CATEGORY_TV_TUNER = 32,
-    IR_CATEGORY_TVS = 33,
-    IR_CATEGORY_TOUCHSCREEN_DISPLAYS = 34,
-    IR_CATEGORY_TOYS = 35,
-    IR_CATEGORY_UNIVERSAL_TV_REMOTES = 36,
-    IR_CATEGORY_VCR = 37,
-    IR_CATEGORY_VACUUM_CLEANERS = 38,
-    IR_CATEGORY_VIDEOCONFERENCING = 39,
-    IR_CATEGORY_WHITEBOARDS = 40,
-    IR_CATEGORY_WINDOW_CLEANERS = 41,
-    IR_CATEGORY_COUNT = 42
-} IRCategory;
+/* Helper functions */
 
-/* Category name lookup */
-static const char* IR_CATEGORY_NAMES[] = {
-    "ACs",
-    "Air_Purifiers",
-    "Audio_and_Video_Receivers",
-    "Bidet",
-    "Blu-Ray",
-    "CCTV",
-    "CD_Players",
-    "Cable_Boxes",
-    "Cameras",
-    "Clocks",
-    "Computers",
-    "Consoles",
-    "Converters",
-    "DVB-T",
-    "DVD_Players",
-    "Digital_Signs",
-    "Fans",
-    "Fireplaces",
-    "Head_Units",
-    "Heaters",
-    "Humidifiers",
-    "LED_Lighting",
-    "Laserdisc",
-    "MiniDisc",
-    "Miscellaneous",
-    "Monitors",
-    "Multimedia",
-    "Picture_Frames",
-    "Projectors",
-    "SoundBars",
-    "Speakers",
-    "Streaming_Devices",
-    "TV_Tuner",
-    "TVs",
-    "Touchscreen_Displays",
-    "Toys",
-    "Universal_TV_Remotes",
-    "VCR",
-    "Vacuum_Cleaners",
-    "Videoconferencing",
-    "Whiteboards",
-    "Window_cleaners",
-};
-
-/* ========== Helper Functions ========== */
-
-/**
- * Get device by index
- * @param index Device index (0 to IR_DEVICE_COUNT-1)
- * @return Pointer to device or NULL if index is invalid
- */
 static inline const IRDevice* ir_get_device(size_t index) {
     if (index >= IR_DEVICE_COUNT) return NULL;
     return &IR_DEVICES[index];
-}
-
-/**
- * Find devices by category
- * @param category Category name to search for
- * @param results Array to store matching device pointers
- * @param max_results Maximum number of results to return
- * @return Number of devices found
- */
-static inline size_t ir_find_by_category(const char* category, 
-                                          const IRDevice** results, 
-                                          size_t max_results) {
-    size_t count = 0;
-    for (size_t i = 0; i < IR_DEVICE_COUNT && count < max_results; i++) {
-        if (strcmp(IR_DEVICES[i].category, category) == 0) {
-            results[count++] = &IR_DEVICES[i];
-        }
-    }
-    return count;
-}
-
-/**
- * Find devices by brand
- * @param brand Brand name to search for
- * @param results Array to store matching device pointers
- * @param max_results Maximum number of results to return
- * @return Number of devices found
- */
-static inline size_t ir_find_by_brand(const char* brand, 
-                                       const IRDevice** results, 
-                                       size_t max_results) {
-    size_t count = 0;
-    for (size_t i = 0; i < IR_DEVICE_COUNT && count < max_results; i++) {
-        if (strcmp(IR_DEVICES[i].brand, brand) == 0) {
-            results[count++] = &IR_DEVICES[i];
-        }
-    }
-    return count;
-}
-
-/**
- * Find a specific signal in a device by name
- * @param device Pointer to device
- * @param signal_name Name of the signal to find
- * @return Pointer to signal or NULL if not found
- */
-static inline const IRSignal* ir_find_signal(const IRDevice* device, 
-                                              const char* signal_name) {
-    if (!device) return NULL;
-    for (size_t i = 0; i < device->signal_count; i++) {
-        if (strcmp(device->signals[i].name, signal_name) == 0) {
-            return &device->signals[i];
-        }
-    }
-    return NULL;
 }
 
 #ifdef __cplusplus

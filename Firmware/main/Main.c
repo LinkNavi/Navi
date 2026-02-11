@@ -6,9 +6,7 @@
 #include "driver/gpio.h"
 #include "esp_log.h"
 
-//#define DISPLAY_TYPE DISPLAY_SH1107
 #include "xbegone_menu.h"
-
 #include "drivers/display.h"
 #include "menu.h"
 #include "drivers/rotary.h"
@@ -25,8 +23,6 @@ static const char *TAG = "NAVI";
 #define ROTARY_CLK 5
 #define ROTARY_DT 6
 #define ROTARY_SW 7
-// SAFE PINS for LilyGO T-Display-S3
-// Avoids touch GPIOs (3-14), flash (35-37), display clocks (43-44)
 #define SD_MOSI 1
 #define SD_MISO 2
 #define SD_CLK  42
@@ -583,7 +579,6 @@ void ir_scan_files(void) {
     open_ir_menu();
 }
 
-
 void ir_browse_files(void) {
     if (!ir_folder_scanned || ir_file_list.count == 0) {
         display_clear();
@@ -642,13 +637,13 @@ void about_screen(void) {
     set_cursor(2, 10);
     set_font(FONT_TOMTHUMB);
     println("ESP32-S3 Demo");
-    println("Version 1.1");
+    println("Version 1.2");
     println("");
     println("Features:");
-    println("- Menu system");
-    println("- Rotary input");
-    println("- SD FAT32");
     println("- IR Blaster");
+    println("- X-BE-GONE");
+    println("- SD FAT32");
+    println("- File Browser");
     println("");
     println("Press to return");
     display_show();
@@ -697,7 +692,7 @@ void game_screen(void) {
 }
 
 void app_main(void) {
-    ESP_LOGI(TAG, "Starting Navi firmware v1.2");
+    ESP_LOGI(TAG, "Starting Navi firmware v1.3");
     
     init_i2c();
     display_init();
@@ -719,7 +714,10 @@ void app_main(void) {
     ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
              ROTARY_CLK, ROTARY_DT, ROTARY_SW);
     
+    xbegone_init_menus();
+    
     menu_init(&main_menu, "Main Menu");
+    menu_add_item_icon(&main_menu, "X", "X-BE-GONE", xbegone_open_main);
     menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
     menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
     menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);
@@ -744,12 +742,11 @@ void app_main(void) {
     menu_add_item_icon(&sd_menu, "<", "Back", back_to_main);
     
     menu_init(&ir_menu, "IR Control");
-    menu_add_item_icon(&ir_menu, "X", "X-BE-GONE", xbegone_open_main); 
     menu_add_item_icon(&ir_menu, "S", "Scan Files", ir_scan_files);
     menu_add_item_icon(&ir_menu, "B", "Browse", ir_browse_files);
     menu_add_item_icon(&ir_menu, "T", "Test Signal", ir_test_signal);
     menu_add_item_icon(&ir_menu, "<", "Back", back_to_main);
-    xbegone_init_menus();
+    
     menu_set_status("Ready");
     menu_set_active(&main_menu);
     menu_draw();

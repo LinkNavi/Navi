@@ -1,0 +1,2 @@
+source /home/link/Programming/Navi/Firmware/build/bootloader/gdbinit/symbols
+source /home/link/Programming/Navi/Firmware/build/bootloader/gdbinit/connect

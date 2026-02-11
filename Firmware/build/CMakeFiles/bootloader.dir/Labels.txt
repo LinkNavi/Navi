@@ -1,0 +1,13 @@
+# Target labels
+ bootloader
+# Source files and their labels
+/home/link/Programming/Navi/Firmware/build/CMakeFiles/bootloader
+/home/link/Programming/Navi/Firmware/build/CMakeFiles/bootloader.rule
+/home/link/Programming/Navi/Firmware/build/CMakeFiles/bootloader-complete.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-build.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-configure.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-download.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-install.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-mkdir.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-patch.rule
+/home/link/Programming/Navi/Firmware/build/bootloader-prefix/src/bootloader-stamp/bootloader-update.rule

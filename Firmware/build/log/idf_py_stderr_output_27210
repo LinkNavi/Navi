@@ -1,0 +1,8 @@
+Command: /home/link/.espressif/python_env/idf5.5_py3.14_env/bin/python /home/link/esp/esp-idf/tools/idf_monitor.py -p /dev/ttyACM0 -b 115200 --toolchain-prefix xtensa-esp32s3-elf- --target esp32s3 --revision 0 /home/link/Programming/Navi/Firmware/build/Firmware.elf /home/link/Programming/Navi/Firmware/build/bootloader/bootloader.elf -m '/home/link/.espressif/python_env/idf5.5_py3.14_env/bin/python' '/home/link/esp/esp-idf/tools/idf.py' '-p' '/dev/ttyACM0'
+[0;33m--- esp-idf-monitor 1.9.0 on /dev/ttyACM0 115200[0m
+[0;33m--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H[0m
+[0m--- 0x4037c5b7: [0;33mspinlock_acquire[0m[0m at [0;32m/home/link/esp/esp-idf/components/esp_hw_support/include/spinlock.h[0m[0m:[1;31m143[0m
+[0m--- (inlined by) [0;33mxPortEnterCriticalTimeout[0m[0m at [0;32m/home/link/esp/esp-idf/components/freertos/FreeRTOS-Kernel/portable/xtensa/port.c[0m[0m:[1;31m479[0m
+[0m--- 0x403c8700: [0;33m_stext[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x403c8924: [0;33mcall_start_cpu0[0m[0m at [0;32m/home/link/esp/esp-idf/components/bootloader/subproject/main/bootloader_start.c[0m[0m:[1;31m25[0m
+[0m

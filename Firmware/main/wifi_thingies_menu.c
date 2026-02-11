@@ -1,15 +1,16 @@
-// wifi_thingies_menu.c - WiFi advanced features menu
 #include "wifi_thingies_menu.h"
 #include "menu.h"
 #include "wifi_bridge.h"
 #include "wifi_bridge_runtime.h"
+#include "modules/wifi_spam.h"
 #include "drivers/wifi.h"
 #include "drivers/display.h"
 #include "drivers/rotary_pcnt.h"
 #include "rotary_text_input.h"
 #include "esp_log.h"
 #include <string.h>
-
+#include "esp_timer.h"  
+#include "esp_random.h"
 static const char *TAG = "WiFi_Thingies";
 
 extern RotaryPCNT encoder;
@@ -17,6 +18,7 @@ extern void back_to_main(void);
 
 Menu wifi_thingies_main_menu;
 Menu wifi_bridge_menu;
+Menu wifi_spam_menu;
 
 static inline void delay(uint32_t ms) {
     vTaskDelay(pdMS_TO_TICKS(ms));
@@ -33,6 +35,14 @@ static void back_to_bridge_menu(void) {
     menu_set_active(&wifi_bridge_menu);
     menu_draw();
 }
+
+static void back_to_spam_menu(void) {
+    menu_set_status("Spam");
+    menu_set_active(&wifi_spam_menu);
+    menu_draw();
+}
+
+// ========== BRIDGE FUNCTIONS ==========
 
 // Show current bridge config
 static void bridge_show_config(void) {
@@ -632,21 +642,570 @@ static void bridge_clear_all(void) {
     back_to_bridge_menu();
 }
 
-// Open bridge menu
-void wifi_thingies_open_bridge(void) {
+// ========== BEACON SPAM FUNCTIONS ==========
+
+
+static void spam_configure_power(void) {
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    SpamConfig *cfg = spam_get_config();
+    uint8_t power_level = cfg->tx_power / 4; // Convert to dBm
+    
+    println("TX Power Config");
+    println("");
+    println("Turn: Adjust");
+    println("Press: Confirm");
+    println("");
+    println("Range:");
+    println("Low:  2dBm  (30ft)");
+    println("Med: 11dBm (100ft)");
+    println("High: 21dBm (200ft)");
+    
+    char msg[32];
+    snprintf(msg, sizeof(msg), "> %ddBm", power_level);
+    println("");
+    println(msg);
+    display_show();
+    
+    while (1) {
+        int8_t dir = rotary_pcnt_read(&encoder);
+        
+        if (dir > 0) {
+            power_level++;
+            if (power_level > 21) power_level = 21;
+        } else if (dir < 0) {
+            power_level--;
+            if (power_level < 2) power_level = 2;
+        }
+        
+        if (dir != 0) {
+            display_clear();
+            set_cursor(2, 10);
+            println("TX Power Config");
+            println("");
+            
+            // Show range estimate
+            const char *range_str;
+            if (power_level < 8) range_str = "~30-50ft";
+            else if (power_level < 14) range_str = "~50-100ft";
+            else if (power_level < 18) range_str = "~100-150ft";
+            else range_str = "~150-200ft";
+            
+            print("Power: ");
+            snprintf(msg, sizeof(msg), "%ddBm", power_level);
+            println(msg);
+            print("Range: ");
+            println(range_str);
+            println("");
+            println("Turn: Adjust");
+            println("Press: Save");
+            display_show();
+        }
+        
+        if (rotary_pcnt_button_pressed(&encoder)) {
+            delay(200);
+            break;
+        }
+        
+        delay(10);
+    }
+    
+    spam_set_tx_power(power_level * 4);
+    
+    display_clear();
+    set_cursor(2, 10);
+    println("Saved!");
+    display_show();
+    delay(500);
+    
+    back_to_spam_menu();
+}
+
+static void spam_configure_interval(void) {
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    SpamConfig *cfg = spam_get_config();
+    uint16_t interval = cfg->beacon_interval;
+    
+    println("Beacon Interval");
+    println("");
+    println("Turn: Adjust");
+    println("Press: Confirm");
+    println("");
+    println("Lower = Faster");
+    println("Higher = Stable");
+    
+    char msg[32];
+    snprintf(msg, sizeof(msg), "> %dms", interval);
+    println("");
+    println(msg);
+    display_show();
+    
+    while (1) {
+        int8_t dir = rotary_pcnt_read(&encoder);
+        
+        if (dir > 0) {
+            interval += 50;
+            if (interval > 1000) interval = 1000;
+        } else if (dir < 0) {
+            interval -= 50;
+            if (interval < 50) interval = 50;
+        }
+        
+        if (dir != 0) {
+            display_clear();
+            set_cursor(2, 10);
+            println("Beacon Interval");
+            println("");
+            
+            snprintf(msg, sizeof(msg), "Interval: %dms", interval);
+            println(msg);
+            println("");
+            
+            if (interval < 100) {
+                println("FAST - Aggressive");
+            } else if (interval < 200) {
+                println("NORMAL - Balanced");
+            } else {
+                println("SLOW - Conservative");
+            }
+            
+            println("");
+            println("Turn: Adjust");
+            println("Press: Save");
+            display_show();
+        }
+        
+        if (rotary_pcnt_button_pressed(&encoder)) {
+            delay(200);
+            break;
+        }
+        
+        delay(10);
+    }
+    
+    spam_set_interval(interval);
+    
+    display_clear();
+    set_cursor(2, 10);
+    println("Saved!");
+    display_show();
+    delay(500);
+    
+    back_to_spam_menu();
+}
+
+static void spam_toggle_random_macs(void) {
+    SpamConfig *cfg = spam_get_config();
+    spam_set_random_macs(!cfg->random_macs);
+    
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Random MACs");
+    println("");
+    println(cfg->random_macs ? "ENABLED" : "DISABLED");
+    println("");
+    
+    if (cfg->random_macs) {
+        println("Each beacon gets");
+        println("a new random MAC");
+        println("");
+        println("Harder to filter");
+    } else {
+        println("Sequential MACs");
+        println("");
+        println("Easier to track");
+    }
+    
+    println("");
+    println("Press to continue");
+    display_show();
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+static void spam_add_custom(void) {
+    char ssid[33] = "";
+    
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    println("Add Custom SSID");
+    println("");
+    println("Enter network name");
+    println("to broadcast");
+    println("");
+    snprintf(ssid, sizeof(ssid), "%d/%d used", spam_get_ssid_count(), MAX_CUSTOM_SSIDS);
+    println(ssid);
+    println("");
+    println("Press to start");
+    display_show();
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(300);
+    
+    ssid[0] = '\0';
+    if (!text_input_get(&encoder, "Custom SSID", ssid, sizeof(ssid), NULL)) {
+        back_to_spam_menu();
+        return;
+    }
+    
+    if (strlen(ssid) == 0) {
+        display_clear();
+        set_cursor(2, 10);
+        println("SSID required!");
+        println("");
+        println("Press to continue");
+        display_show();
+        
+        while(!rotary_pcnt_button_pressed(&encoder)) {
+            rotary_pcnt_read(&encoder);
+            delay(10);
+        }
+        delay(200);
+        back_to_spam_menu();
+        return;
+    }
+    
+    if (spam_add_custom_ssid(ssid)) {
+        display_clear();
+        set_cursor(2, 10);
+        println("Added!");
+        println("");
+        println(ssid);
+        println("");
+        println("Custom list now:");
+        char msg[32];
+        snprintf(msg, sizeof(msg), "%d networks", custom_ssid_count);
+        println(msg);
+        println("");
+        println("Press to continue");
+        display_show();
+    } else {
+        display_clear();
+        set_cursor(2, 10);
+        println("List full!");
+        println("");
+        println("Max 32 custom");
+        println("networks");
+        println("");
+        println("Press to continue");
+        display_show();
+    }
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+static void spam_toggle_list(void) {
+    SpamConfig *cfg = spam_get_config();
+    spam_use_custom_list(!cfg->use_custom_list);
+    
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("SSID List Mode");
+    println("");
+    
+    if (cfg->use_custom_list) {
+        println("CUSTOM LIST");
+        println("");
+        char msg[32];
+        snprintf(msg, sizeof(msg), "%d custom SSIDs", custom_ssid_count);
+        println(msg);
+        
+        if (custom_ssid_count == 0) {
+            println("");
+            println("WARNING: List empty!");
+            println("Add SSIDs first");
+        }
+    } else {
+        println("DEFAULT LIST");
+        println("");
+        println("20 funny networks");
+        println("built-in");
+    }
+    
+    println("");
+    println("Press to continue");
+    display_show();
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+static void spam_clear_custom(void) {
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Clear custom list?");
+    println("");
+    char msg[32];
+    snprintf(msg, sizeof(msg), "%d networks", custom_ssid_count);
+    println(msg);
+    println("will be deleted");
+    println("");
+    println("Turn: Yes/No");
+    println("Press: Confirm");
+    display_show();
+    
+    uint8_t confirm = 0;
+    while (1) {
+        int8_t dir = rotary_pcnt_read(&encoder);
+        if (dir != 0) {
+            confirm = !confirm;
+            display_clear();
+            set_cursor(2, 10);
+            println("Clear custom list?");
+            println("");
+            if (confirm) {
+                println("> YES - Clear");
+                println("  NO  - Keep");
+            } else {
+                println("  YES - Clear");
+                println("> NO  - Keep");
+            }
+            display_show();
+        }
+        
+        if (rotary_pcnt_button_pressed(&encoder)) {
+            delay(200);
+            break;
+        }
+        delay(10);
+    }
+    
+    if (confirm) {
+        spam_clear_custom_ssids();
+        
+        display_clear();
+        set_cursor(2, 10);
+        println("Cleared!");
+        println("");
+        println("Custom list empty");
+        display_show();
+        delay(1000);
+    }
+    
+    back_to_spam_menu();
+}
+
+// Update spam_show_status to show config
+static void spam_show_status(void) {
+    SpamConfig *cfg = spam_get_config();
+    
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Beacon Spam");
+    println("");
+    
+    if (spam_is_running()) {
+        println("Status: ACTIVE");
+    } else {
+        println("Status: Stopped");
+    }
+    
+    println("");
+    println("Config:");
+    
+    char msg[32];
+    snprintf(msg, sizeof(msg), "Power: %ddBm", cfg->tx_power / 4);
+    println(msg);
+    
+    snprintf(msg, sizeof(msg), "Interval: %dms", cfg->beacon_interval);
+    println(msg);
+    
+    println(cfg->random_macs ? "MACs: Random" : "MACs: Fixed");
+    
+    if (cfg->use_custom_list) {
+        snprintf(msg, sizeof(msg), "List: Custom (%d)", custom_ssid_count);
+    } else {
+        snprintf(msg, sizeof(msg), "List: Default (20)");
+    }
+    println(msg);
+    
+    println("");
+    println("Press to continue");
+    display_show();
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+static void spam_start_beacon(void) {
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Starting beacon");
+    println("spam...");
+    println("");
+    println("This will flood");
+    println("WiFi lists with");
+    println("fake networks!");
+    println("");
+    println("Broadcasting:");
+    println("20 SSIDs");
+    display_show();
+    delay(1500);
+    
+    if (spam_start()) {
+        display_clear();
+        set_cursor(2, 10);
+        println("Beacon spam");
+        println("ACTIVE!");
+        println("");
+        println("Check WiFi list");
+        println("on other devices");
+        println("");
+        println("You should see:");
+        println("- FBI Van");
+        println("- Virus Point");
+        println("- NSA Post");
+        println("- Pretty Fly WiFi");
+        println("...and 16 more!");
+        println("");
+        println("Press to continue");
+        display_show();
+    } else {
+        display_clear();
+        set_cursor(2, 10);
+        println("Failed to start!");
+        println("");
+        println("WiFi may be busy");
+        println("");
+        println("Press to continue");
+        display_show();
+    }
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+static void spam_stop_beacon(void) {
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Stopping spam...");
+    println("");
+    println("Halting beacon");
+    println("broadcasts");
+    display_show();
+    delay(500);
+    
+    spam_stop();
+    
+    display_clear();
+    set_cursor(2, 10);
+    println("Spam stopped!");
+    println("");
+    println("WiFi list should");
+    println("clear shortly");
+    println("");
+    println("Fake networks");
+    println("will disappear");
+    println("in ~30 seconds");
+    println("");
+    println("Press to continue");
+    display_show();
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+static void spam_about(void) {
+    display_clear();
+    set_cursor(2, 10);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Beacon Spam");
+    println("");
+    println("Broadcasts fake");
+    println("WiFi networks");
+    println("");
+    println("How it works:");
+    println("- Sends 802.11");
+    println("  beacon frames");
+    println("- Random MACs");
+    println("- 20 SSIDs");
+    println("- 100ms interval");
+    println("");
+    println("Networks appear");
+    println("real but aren't");
+    println("connectable!");
+    println("");
+    println("Press to continue");
+    display_show();
+    
+    while(!rotary_pcnt_button_pressed(&encoder)) {
+        rotary_pcnt_read(&encoder);
+        delay(10);
+    }
+    delay(200);
+    back_to_spam_menu();
+}
+
+// ========== MENU NAVIGATION ==========
+
+static void wifi_thingies_open_bridge(void) {
     menu_set_status("Bridge");
     menu_set_active(&wifi_bridge_menu);
     menu_draw();
 }
 
-// Open main thingies menu
+static void wifi_thingies_open_spam(void) {
+    menu_set_status("Spam");
+    menu_set_active(&wifi_spam_menu);
+    menu_draw();
+}
+
 void wifi_thingies_open(void) {
     menu_set_status("Thingies");
     menu_set_active(&wifi_thingies_main_menu);
     menu_draw();
 }
 
-// Initialize all menus
+// ========== MENU INITIALIZATION ==========
+
 void wifi_thingies_init(void) {
     ESP_LOGI(TAG, "Initializing WiFi Thingies menus");
     
@@ -656,6 +1215,7 @@ void wifi_thingies_init(void) {
     // Main thingies menu
     menu_init(&wifi_thingies_main_menu, "WiFi Thingies");
     menu_add_item_icon(&wifi_thingies_main_menu, "B", "Bridge Mode", wifi_thingies_open_bridge);
+    menu_add_item_icon(&wifi_thingies_main_menu, "S", "Beacon Spam", wifi_thingies_open_spam);
     menu_add_item_icon(&wifi_thingies_main_menu, "<", "Back", back_to_main);
     
     // Bridge submenu
@@ -667,4 +1227,17 @@ void wifi_thingies_init(void) {
     menu_add_item_icon(&wifi_bridge_menu, "T", "Stop Bridge", bridge_stop_now);
     menu_add_item_icon(&wifi_bridge_menu, "X", "Clear Config", bridge_clear_all);
     menu_add_item_icon(&wifi_bridge_menu, "<", "Back", back_to_thingies_main);
+    
+    // Beacon Spam submenu
+    menu_init(&wifi_spam_menu, "Beacon Spam");
+    menu_add_item_icon(&wifi_spam_menu, "I", "Status", spam_show_status);
+    menu_add_item_icon(&wifi_spam_menu, "S", "Start Spam", spam_start_beacon);
+    menu_add_item_icon(&wifi_spam_menu, "T", "Stop Spam", spam_stop_beacon);
+    menu_add_item_icon(&wifi_spam_menu, "P", "TX Power", spam_configure_power);
+    menu_add_item_icon(&wifi_spam_menu, "V", "Interval", spam_configure_interval);
+    menu_add_item_icon(&wifi_spam_menu, "M", "Random MACs", spam_toggle_random_macs);
+    menu_add_item_icon(&wifi_spam_menu, "L", "Toggle List", spam_toggle_list);
+    menu_add_item_icon(&wifi_spam_menu, "A", "Add Custom", spam_add_custom);
+
+    menu_add_item_icon(&wifi_spam_menu, "<", "Back", back_to_thingies_main);
 }

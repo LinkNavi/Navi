@@ -1,4 +1,4 @@
-// wifi.h - WiFi management for Navi
+// wifi.h - WiFi management for Navi (FIXED - no duplicate event loop)
 #ifndef WIFI_H
 #define WIFI_H
 
@@ -20,8 +20,8 @@ static const char *WIFI_TAG = "WiFi";
 static EventGroupHandle_t wifi_event_group;
 static uint8_t wifi_retry_num = 0;
 static uint8_t wifi_connected = 0;
+static uint8_t wifi_initialized = 0;  // Track if WiFi is already initialized
 
-// WiFi credentials storage in NVS
 typedef struct {
     char ssid[32];
     char password[64];
@@ -51,15 +51,28 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-static inline uint8_t wifi_init_sta(const char *ssid, const char *password) {
-    wifi_event_group = xEventGroupCreate();
-
+// FIXED: Initialize WiFi subsystem (call once at startup)
+static inline void wifi_init_system(void) {
+    if (wifi_initialized) return;
+    
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_start());
+    
+    wifi_initialized = 1;
+    ESP_LOGI(WIFI_TAG, "WiFi system initialized");
+}
+
+static inline uint8_t wifi_init_sta(const char *ssid, const char *password) {
+    // Initialize WiFi system if not already done
+    wifi_init_system();
+    
+    wifi_event_group = xEventGroupCreate();
 
     esp_event_handler_instance_t instance_any_id;
     esp_event_handler_instance_t instance_got_ip;
@@ -77,12 +90,27 @@ static inline uint8_t wifi_init_sta(const char *ssid, const char *password) {
     wifi_config_t wifi_config = {0};
     strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
     strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    
+    // Support all security types - set threshold to OPEN if no password
+    if (strlen(password) == 0) {
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    } else {
+        // Accept any secure auth mode (WEP, WPA, WPA2, WPA3)
+        wifi_config.sta.threshold.authmode = WIFI_AUTH_WEP;
+    }
+    
+    // PMF (Protected Management Frames) config for WPA3
     wifi_config.sta.pmf_cfg.capable = true;
-    wifi_config.sta.pmf_cfg.required = false;
+    wifi_config.sta.pmf_cfg.required = false;  // Optional, not mandatory
+    
+    // Enable scanning of all auth modes
+    wifi_config.sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
+    wifi_config.sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
 
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+    
+    // Restart WiFi to apply new config
+    ESP_ERROR_CHECK(esp_wifi_stop());
     ESP_ERROR_CHECK(esp_wifi_start());
 
     ESP_LOGI(WIFI_TAG, "wifi_init_sta finished.");
@@ -112,13 +140,11 @@ static inline uint8_t wifi_is_connected(void) {
 static inline void wifi_disconnect(void) {
     if (wifi_connected) {
         esp_wifi_disconnect();
-        esp_wifi_stop();
         wifi_connected = 0;
         ESP_LOGI(WIFI_TAG, "Disconnected");
     }
 }
 
-// Save credentials to NVS
 static inline uint8_t wifi_save_credentials(const char *ssid, const char *password) {
     nvs_handle_t nvs_handle;
     esp_err_t err;
@@ -153,7 +179,6 @@ static inline uint8_t wifi_save_credentials(const char *ssid, const char *passwo
     return 0;
 }
 
-// Load credentials from NVS
 static inline uint8_t wifi_load_credentials(char *ssid, size_t ssid_len, 
                                              char *password, size_t pass_len) {
     nvs_handle_t nvs_handle;
@@ -186,7 +211,6 @@ static inline uint8_t wifi_load_credentials(char *ssid, size_t ssid_len,
     return 1;
 }
 
-// Get IP address as string
 static inline void wifi_get_ip_string(char *ip_str, size_t len) {
     if (!wifi_connected) {
         strncpy(ip_str, "Not connected", len);
@@ -203,8 +227,10 @@ static inline void wifi_get_ip_string(char *ip_str, size_t len) {
     }
 }
 
-// Scan for networks
+// FIXED: Use wifi_init_system() instead of reinitializing everything
 static inline uint16_t wifi_scan_networks(wifi_ap_record_t *ap_list, uint16_t max_aps) {
+    wifi_init_system();  // Only initializes if not already done
+    
     wifi_scan_config_t scan_config = {
         .ssid = NULL,
         .bssid = NULL,

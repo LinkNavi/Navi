@@ -1,4 +1,4 @@
-// rotary_text_input.h - Text input using only rotary encoder (FIXED VERSION)
+// rotary_text_input.h - Text input using rotary encoder (FIXED)
 #ifndef ROTARY_TEXT_INPUT_H
 #define ROTARY_TEXT_INPUT_H
 
@@ -13,23 +13,23 @@ static const char CHARSET[] =
     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
     "0123456789"
     "!@#$%^&*()-_=+[]{}|;:,.<>?/ "
-    "\x7F";  // DEL character at end
+    "\x7F"   // DEL character
+    "\r";    // RETURN/DONE character at end
 
 #define CHARSET_LEN (sizeof(CHARSET) - 1)
-#define CHAR_DEL (CHARSET_LEN - 1)
+#define CHAR_DEL (CHARSET_LEN - 2)
+#define CHAR_DONE (CHARSET_LEN - 1)
 
-// Text input state
 typedef struct {
     char buffer[64];
     uint8_t length;
-    uint8_t char_index;  // Current character in charset
-    uint8_t mode;        // 0 = select char, 1 = confirm/next
-    uint32_t last_action_time;  // For debouncing
+    uint8_t char_index;
+    uint8_t mode;
+    uint32_t last_action_time;
 } TextInput;
 
 static TextInput text_input;
 
-// Initialize text input
 static inline void text_input_init(const char *initial) {
     memset(text_input.buffer, 0, sizeof(text_input.buffer));
     if (initial) {
@@ -43,20 +43,15 @@ static inline void text_input_init(const char *initial) {
     text_input.last_action_time = 0;
 }
 
-// Get current character being selected
 static inline char text_input_current_char(void) {
     return CHARSET[text_input.char_index];
 }
 
-// Handle rotary encoder input
-// Returns: 1 if done (user confirmed), 0 if still editing, -1 if cancelled
 static inline int8_t text_input_update(RotaryPCNT *encoder) {
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     
-    // Debounce - prevent rapid mode changes from interfering with rotation
     uint32_t debounce_ms = (text_input.mode == 1) ? 300 : 50;
     if (now - text_input.last_action_time < debounce_ms) {
-        // Still in debounce period - only read encoder, don't act
         rotary_pcnt_read(encoder);
         return 0;
     }
@@ -64,7 +59,6 @@ static inline int8_t text_input_update(RotaryPCNT *encoder) {
     int8_t dir = rotary_pcnt_read(encoder);
     
     if (text_input.mode == 0) {
-        // Mode 0: Selecting character
         if (dir > 0) {
             text_input.char_index = (text_input.char_index + 1) % CHARSET_LEN;
             text_input.last_action_time = now;
@@ -74,36 +68,29 @@ static inline int8_t text_input_update(RotaryPCNT *encoder) {
         }
         
         if (rotary_pcnt_button_pressed(encoder)) {
-            // Short press: confirm character
             text_input.mode = 1;
             text_input.last_action_time = now;
             vTaskDelay(pdMS_TO_TICKS(200));
         }
     } else {
-        // Mode 1: Confirm action (add char, delete, or done)
         if (dir != 0) {
-            // Any rotation: cancel and go back to char selection
             text_input.mode = 0;
             text_input.last_action_time = now;
-            // Give extra delay to let encoder settle
             vTaskDelay(pdMS_TO_TICKS(100));
         }
         
         if (rotary_pcnt_button_pressed(encoder)) {
-            // Short press: execute action
             char current = text_input_current_char();
             
             if (current == '\x7F') {
-                // DEL: remove last character
                 if (text_input.length > 0) {
                     text_input.length--;
                     text_input.buffer[text_input.length] = '\0';
                 }
-            } else if (current == ' ' && text_input.length == 0) {
-                // Space at start = DONE
+            } else if (current == '\r') {
+                // RETURN character = Done/Submit
                 return 1;
             } else {
-                // Add character
                 if (text_input.length < sizeof(text_input.buffer) - 1) {
                     text_input.buffer[text_input.length] = current;
                     text_input.length++;
@@ -118,31 +105,27 @@ static inline int8_t text_input_update(RotaryPCNT *encoder) {
         }
     }
     
-    // Hold detection for cancel
     static uint32_t hold_start = 0;
     if (gpio_get_level((gpio_num_t)encoder->pin_sw) == 0) {
         if (hold_start == 0) {
             hold_start = now;
         } else if ((now - hold_start) > 1000) {
-            return -1;  // Cancelled
+            return -1;
         }
     } else {
         hold_start = 0;
     }
     
-    return 0;  // Still editing
+    return 0;
 }
 
-// Draw the text input UI
 static inline void text_input_draw(const char *title) {
     display_clear();
     set_font(FONT_TOMTHUMB);
     
-    // Title bar
     fill_rect(0, 0, WIDTH, 10, 1);
     set_cursor(2, 7);
     
-    // Draw title inverted
     const char *t = title;
     int16_t tx = 2;
     while (*t) {
@@ -170,7 +153,6 @@ static inline void text_input_draw(const char *title) {
     
     draw_hline(0, 10, WIDTH, 1);
     
-    // Current text (scrolling if needed)
     set_cursor(2, 20);
     uint8_t display_start = 0;
     if (text_input.length > 20) {
@@ -182,16 +164,13 @@ static inline void text_input_draw(const char *title) {
     display_text[20] = '\0';
     print(display_text);
     
-    // Cursor
     draw_vline(2 + (text_input.length - display_start) * 4, 21, 6, 1);
     
     draw_hline(0, 28, WIDTH, 1);
     
-    // Current character selection (BIG)
     char current = text_input_current_char();
     
     if (text_input.mode == 0) {
-        // Selecting mode - show character large
         set_cursor(WIDTH/2 - 6, 50);
         set_font(FONT_FREEMONO_9PT);
         
@@ -199,7 +178,7 @@ static inline void text_input_draw(const char *title) {
             set_font(FONT_TOMTHUMB);
             set_cursor(WIDTH/2 - 8, 50);
             print("DEL");
-        } else if (current == ' ' && text_input.length == 0) {
+        } else if (current == '\r') {
             set_font(FONT_TOMTHUMB);
             set_cursor(WIDTH/2 - 12, 50);
             print("DONE");
@@ -208,7 +187,6 @@ static inline void text_input_draw(const char *title) {
             print(str);
         }
     } else {
-        // Confirm mode - show with box
         draw_rect(WIDTH/2 - 15, 35, 30, 24, 1);
         set_cursor(WIDTH/2 - 6, 50);
         set_font(FONT_FREEMONO_9PT);
@@ -217,7 +195,7 @@ static inline void text_input_draw(const char *title) {
             set_font(FONT_TOMTHUMB);
             set_cursor(WIDTH/2 - 8, 50);
             print("DEL");
-        } else if (current == ' ' && text_input.length == 0) {
+        } else if (current == '\r') {
             set_font(FONT_TOMTHUMB);
             set_cursor(WIDTH/2 - 12, 50);
             print("DONE");
@@ -231,7 +209,6 @@ static inline void text_input_draw(const char *title) {
         print("Press=Add");
     }
     
-    // Help text
     set_font(FONT_TOMTHUMB);
     set_cursor(2, 80);
     if (text_input.mode == 0) {
@@ -246,13 +223,11 @@ static inline void text_input_draw(const char *title) {
     set_cursor(2, 96);
     print("Hold=Cancel");
     
-    // Show character position in set
     set_cursor(2, 104);
     char pos[16];
     snprintf(pos, sizeof(pos), "%d/%d", text_input.char_index + 1, CHARSET_LEN);
     print(pos);
     
-    // Alphabet hint (show nearby chars)
     set_cursor(2, 112);
     char hint[32];
     uint8_t hint_pos = 0;
@@ -274,9 +249,8 @@ static inline void text_input_draw(const char *title) {
     display_show();
 }
 
-// Convenience function: get text input with title
-// Returns: 1 if success (text in buffer), 0 if cancelled
-static inline uint8_t text_input_get(Rotary *encoder, const char *title, 
+// FIXED: Changed parameter type from Rotary* to RotaryPCNT*
+static inline uint8_t text_input_get(RotaryPCNT *encoder, const char *title, 
                                       char *result, size_t result_size, 
                                       const char *initial) {
     text_input_init(initial);
@@ -287,12 +261,10 @@ static inline uint8_t text_input_get(Rotary *encoder, const char *title,
         int8_t status = text_input_update(encoder);
         
         if (status == 1) {
-            // Done
             strncpy(result, text_input.buffer, result_size - 1);
             result[result_size - 1] = '\0';
             return 1;
         } else if (status == -1) {
-            // Cancelled
             return 0;
         }
         

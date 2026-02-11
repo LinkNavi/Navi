@@ -1,4 +1,4 @@
-// rotary_pcnt.h - Hardware PCNT-based rotary encoder driver
+// rotary_pcnt.h - Hardware PCNT-based rotary encoder driver (FIXED)
 #ifndef ROTARY_PCNT_H
 #define ROTARY_PCNT_H
 
@@ -35,7 +35,7 @@ static inline void rotary_pcnt_init(RotaryPCNT *rot, uint8_t clk, uint8_t dt, ui
     pcnt_unit_config_t unit_config = {
         .high_limit = 32767,
         .low_limit = -32768,
-        .flags.accum_count = 0,  // Clear on overflow
+        .flags.accum_count = 0,
     };
     ESP_ERROR_CHECK(pcnt_new_unit(&unit_config, &rot->unit));
     
@@ -54,27 +54,23 @@ static inline void rotary_pcnt_init(RotaryPCNT *rot, uint8_t clk, uint8_t dt, ui
     ESP_ERROR_CHECK(pcnt_new_channel(rot->unit, &chan_b_config, &rot->chan_b));
     
     // Configure quadrature decoding
-    // When CLK rises and DT is low: increment
-    // When CLK rises and DT is high: decrement
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(rot->chan_a,
-        PCNT_CHANNEL_EDGE_ACTION_DECREASE,  // Rising edge, DT high
-        PCNT_CHANNEL_EDGE_ACTION_INCREASE)); // Rising edge, DT low
+        PCNT_CHANNEL_EDGE_ACTION_DECREASE,
+        PCNT_CHANNEL_EDGE_ACTION_INCREASE));
     ESP_ERROR_CHECK(pcnt_channel_set_level_action(rot->chan_a,
-        PCNT_CHANNEL_LEVEL_ACTION_KEEP,      // DT low: keep action
-        PCNT_CHANNEL_LEVEL_ACTION_INVERSE)); // DT high: invert action
+        PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+        PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
     
-    // Same for channel B (DT pin edges)
     ESP_ERROR_CHECK(pcnt_channel_set_edge_action(rot->chan_b,
-        PCNT_CHANNEL_EDGE_ACTION_INCREASE,   // Rising edge, CLK high
-        PCNT_CHANNEL_EDGE_ACTION_DECREASE)); // Rising edge, CLK low
+        PCNT_CHANNEL_EDGE_ACTION_INCREASE,
+        PCNT_CHANNEL_EDGE_ACTION_DECREASE));
     ESP_ERROR_CHECK(pcnt_channel_set_level_action(rot->chan_b,
-        PCNT_CHANNEL_LEVEL_ACTION_KEEP,      // CLK low: keep action
-        PCNT_CHANNEL_LEVEL_ACTION_INVERSE)); // CLK high: invert action
+        PCNT_CHANNEL_LEVEL_ACTION_KEEP,
+        PCNT_CHANNEL_LEVEL_ACTION_INVERSE));
     
     // Enable glitch filter (1 microsecond)
-    // This filters out electrical noise and bounce
     pcnt_glitch_filter_config_t filter_config = {
-        .max_glitch_ns = 1000,  // 1µs glitch filter
+        .max_glitch_ns = 1000,
     };
     ESP_ERROR_CHECK(pcnt_unit_set_glitch_filter(rot->unit, &filter_config));
     
@@ -83,7 +79,7 @@ static inline void rotary_pcnt_init(RotaryPCNT *rot, uint8_t clk, uint8_t dt, ui
     ESP_ERROR_CHECK(pcnt_unit_clear_count(rot->unit));
     ESP_ERROR_CHECK(pcnt_unit_start(rot->unit));
     
-    // Configure button pin (standard GPIO)
+    // Configure button pin
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << sw),
         .mode = GPIO_MODE_INPUT,
@@ -103,19 +99,17 @@ static inline int8_t rotary_pcnt_read(RotaryPCNT *rot) {
     int count;
     ESP_ERROR_CHECK(pcnt_unit_get_count(rot->unit, &count));
     
-    // Calculate difference since last read
     int diff = count - rot->last_count;
     
     if (diff != 0) {
         rot->last_count = count;
         rot->position += diff;
         
-        // Return simplified direction
-        if (diff > 0) return 1;   // Clockwise
-        if (diff < 0) return -1;  // Counter-clockwise
+        if (diff > 0) return 1;
+        if (diff < 0) return -1;
     }
     
-    return 0;  // No change
+    return 0;
 }
 
 // Check if button was pressed (edge detection)
@@ -123,7 +117,6 @@ static inline uint8_t rotary_pcnt_button_pressed(RotaryPCNT *rot) {
     uint8_t sw = gpio_get_level((gpio_num_t)rot->pin_sw);
     uint8_t pressed = 0;
     
-    // Detect falling edge (button press)
     if (sw == 0 && rot->last_sw == 1) {
         pressed = 1;
     }
@@ -144,13 +137,13 @@ static inline void rotary_pcnt_reset_position(RotaryPCNT *rot) {
     rot->last_count = 0;
 }
 
-// Cleanup (call before freeing)
+// Cleanup (FIXED: removed non-existent function)
 static inline void rotary_pcnt_deinit(RotaryPCNT *rot) {
     pcnt_unit_stop(rot->unit);
     pcnt_unit_disable(rot->unit);
     pcnt_del_channel(rot->chan_a);
     pcnt_del_channel(rot->chan_b);
-    pcnt_unit_remove_glitch_filter(rot->unit);
+    // Glitch filter is removed automatically with pcnt_del_unit in v5.x
     pcnt_del_unit(rot->unit);
     
     ESP_LOGI(ROTARY_PCNT_TAG, "PCNT encoder deinitialized");

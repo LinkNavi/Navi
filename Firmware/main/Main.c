@@ -16,6 +16,7 @@
 #include "file_browser.h"
 #include "wifi_menu.h"
 #include "rotary_debug.h"
+#include "wifi_thingies_menu.h"
 static const char *TAG = "NAVI";
 
 #include "driver/rmt_tx.h"
@@ -737,9 +738,10 @@ void app_main(void) {
              ROTARY_CLK, ROTARY_DT, ROTARY_SW);
     
     wifi_menu_init();
-    
+    wifi_thingies_init();
     menu_init(&main_menu, "Main Menu");
     menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
+menu_add_item_icon(&main_menu, "T", "WiFi Thingies", wifi_thingies_open);
     menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
     menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
     menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);

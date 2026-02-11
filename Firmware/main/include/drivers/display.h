@@ -1,4 +1,4 @@
-// display.h
+// display.h - FIXED: Removed unused variables in display_show_partial
 #ifndef DISPLAY_H
 #define DISPLAY_H
 
@@ -7,7 +7,6 @@
 #include "driver/i2c.h"
 #include "font.h"
 
-// Display type selection
 #define DISPLAY_SSD1306 0
 #define DISPLAY_SH1107  1
 
@@ -27,18 +26,15 @@
 #define HEIGHT 128
 #endif
 
-// Framebuffer and state
 static uint8_t framebuffer[WIDTH * HEIGHT / 8];
 static int16_t cursor_x = 0;
 static int16_t cursor_y = 0;
 static FontType current_font = FONT_TOMTHUMB;
 
-// Dirty region tracking
 static uint8_t dirty_x0 = 0, dirty_y0 = 0;
 static uint8_t dirty_x1 = WIDTH-1, dirty_y1 = HEIGHT-1;
 static uint8_t is_dirty = 0;
 
-// Mark region as dirty
 static inline void mark_dirty(int16_t x, int16_t y) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return;
     if (!is_dirty) {
@@ -57,7 +53,6 @@ static inline void reset_dirty(void) {
     is_dirty = 0;
 }
 
-// Hardware communication
 static inline void display_write_cmd(uint8_t cmd) {
     i2c_cmd_handle_t handle = i2c_cmd_link_create();
     i2c_master_start(handle);
@@ -71,7 +66,6 @@ static inline void display_write_cmd(uint8_t cmd) {
 
 static inline void display_init(void) {
 #if DISPLAY_TYPE == DISPLAY_SSD1306
-    // SSD1306 initialization
     display_write_cmd(0xAE);
     display_write_cmd(0xD5); display_write_cmd(0x80);
     display_write_cmd(0xA8); display_write_cmd(0x3F);
@@ -90,23 +84,22 @@ static inline void display_init(void) {
     display_write_cmd(0xAF);
 #else
     display_write_cmd(0xAE);
-display_write_cmd(0xDC); display_write_cmd(0x00);
-display_write_cmd(0x81); display_write_cmd(0x2F);
-display_write_cmd(0x20); // Page addressing mode
-display_write_cmd(0xA0); // Segment remap normal
-display_write_cmd(0xC0); // COM normal
-display_write_cmd(0xA8); display_write_cmd(0x7F);
-display_write_cmd(0xD3); display_write_cmd(0x00); // offset 0
-display_write_cmd(0xD5); display_write_cmd(0x51);
-display_write_cmd(0xD9); display_write_cmd(0x22);
-display_write_cmd(0xDB); display_write_cmd(0x35);
-display_write_cmd(0xA4);
-display_write_cmd(0xA6);
-display_write_cmd(0xAF);
+    display_write_cmd(0xDC); display_write_cmd(0x00);
+    display_write_cmd(0x81); display_write_cmd(0x2F);
+    display_write_cmd(0x20);
+    display_write_cmd(0xA0);
+    display_write_cmd(0xC0);
+    display_write_cmd(0xA8); display_write_cmd(0x7F);
+    display_write_cmd(0xD3); display_write_cmd(0x00);
+    display_write_cmd(0xD5); display_write_cmd(0x51);
+    display_write_cmd(0xD9); display_write_cmd(0x22);
+    display_write_cmd(0xDB); display_write_cmd(0x35);
+    display_write_cmd(0xA4);
+    display_write_cmd(0xA6);
+    display_write_cmd(0xAF);
 #endif
 }
 
-// Full display update
 static inline void display_show(void) {
 #if DISPLAY_TYPE == DISPLAY_SSD1306
     display_write_cmd(0x21); display_write_cmd(0); display_write_cmd(127);
@@ -121,11 +114,10 @@ static inline void display_show(void) {
     i2c_master_cmd_begin(I2C_NUM_0, handle, pdMS_TO_TICKS(100));
     i2c_cmd_link_delete(handle);
 #else
-    // SH1107 page-by-page update (FIXED column offset)
    for (uint8_t page = 0; page < 16; page++) {
-    display_write_cmd(0xB0 + page);  // Set page
-    display_write_cmd(0x00);          // Lower column start = 0
-    display_write_cmd(0x10);          // Upper column start = 0
+    display_write_cmd(0xB0 + page);
+    display_write_cmd(0x00);
+    display_write_cmd(0x10);
     
     i2c_cmd_handle_t handle = i2c_cmd_link_create();
     i2c_master_start(handle);
@@ -144,16 +136,16 @@ static inline void display_show(void) {
     reset_dirty();
 }
 
-// Partial display update (fast!)
+// FIXED: Removed unused variables
 static inline void display_show_partial(void) {
     if (!is_dirty) return;
     
+#if DISPLAY_TYPE == DISPLAY_SSD1306
     uint8_t col_start = dirty_x0;
     uint8_t col_end = dirty_x1;
     uint8_t page_start = dirty_y0 / 8;
     uint8_t page_end = dirty_y1 / 8;
     
-#if DISPLAY_TYPE == DISPLAY_SSD1306
     display_write_cmd(0x21); 
     display_write_cmd(col_start); 
     display_write_cmd(col_end);
@@ -175,7 +167,6 @@ static inline void display_show_partial(void) {
     i2c_master_cmd_begin(I2C_NUM_0, handle, pdMS_TO_TICKS(100));
     i2c_cmd_link_delete(handle);
 #else
-    // SH1107 partial update
    for (uint8_t page = 0; page < 16; page++) {
     display_write_cmd(0xB0 + page);
     display_write_cmd(0x00);
@@ -194,7 +185,6 @@ static inline void display_show_partial(void) {
     reset_dirty();
 }
 
-// Core drawing
 static inline void display_pixel(int16_t x, int16_t y, uint8_t color) {
     if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) return;
     mark_dirty(x, y);
@@ -209,7 +199,6 @@ static inline void display_clear(void) {
     is_dirty = 1;
 }
 
-// Fast primitives
 static inline void draw_hline(int16_t x, int16_t y, int16_t w, uint8_t color) {
     if (y < 0 || y >= HEIGHT || x >= WIDTH) return;
     int16_t x_end = x + w;
@@ -477,7 +466,6 @@ static inline void println(const char *str) {
     cursor_y += current_font == FONT_TOMTHUMB ? 8 : 20;
 }
 
-// Legacy aliases for compatibility
 #define ssd1306_init display_init
 #define ssd1306_display display_show
 #define ssd1306_display_partial display_show_partial

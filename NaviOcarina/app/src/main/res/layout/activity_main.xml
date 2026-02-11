@@ -1,0 +1,273 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#0A0E27">
+
+    <!-- Header -->
+    <LinearLayout
+        android:id="@+id/header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:padding="16dp"
+        android:background="#1A1F3A">
+
+        <Button
+            android:id="@+id/backButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:text="←"
+            android:textSize="24sp"
+            android:textColor="#FFFFFF"
+            android:backgroundTint="#2A2F4A"
+            android:visibility="gone"/>
+
+        <TextView
+            android:id="@+id/menuTitle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_gravity="center_vertical"
+            android:text="Navi Ocarina"
+            android:textSize="24sp"
+            android:textColor="#FFFFFF"
+            android:textStyle="bold"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"/>
+    </LinearLayout>
+
+    <!-- Content Area -->
+    <FrameLayout
+        android:id="@+id/contentArea"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_above="@id/footer"
+        android:layout_below="@id/header"
+        android:padding="16dp">
+
+        <!-- MAIN MENU -->
+        <LinearLayout
+            android:id="@+id/mainMenu"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:gravity="center">
+
+            <Button
+                android:id="@+id/btnConnect"
+                android:layout_width="match_parent"
+                android:layout_height="80dp"
+                android:text="CONNECT"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4A90E2"
+                android:layout_marginBottom="16dp"/>
+
+            <Button
+                android:id="@+id/btnWifiThingies"
+                android:layout_width="match_parent"
+                android:layout_height="80dp"
+                android:text="WIFI THINGIES"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#50E3C2"
+                android:layout_marginBottom="16dp"/>
+
+            <Button
+                android:id="@+id/btnBluetoothThingies"
+                android:layout_width="match_parent"
+                android:layout_height="80dp"
+                android:text="BLUETOOTH THINGIES"
+                android:textSize="20sp"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#9B59B6"/>
+        </LinearLayout>
+
+        <!-- CONNECT MENU -->
+        <LinearLayout
+            android:id="@+id/connectMenu"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnScan"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SCAN FOR DEVICES"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4A90E2"
+                android:layout_marginBottom="16dp"/>
+
+            <Button
+                android:id="@+id/btnDisconnect"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="DISCONNECT"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#E94B3C"
+                android:layout_marginBottom="16dp"/>
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Available Devices (tap to connect)"
+                android:textSize="14sp"
+                android:textColor="#AAAAAA"
+                android:layout_marginBottom="8dp"/>
+
+            <ListView
+                android:id="@+id/deviceList"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#1A1F3A"
+                android:divider="#2A2F4A"
+                android:dividerHeight="1dp"
+                android:padding="8dp"/>
+        </LinearLayout>
+
+        <!-- WIFI MENU -->
+        <ScrollView
+            android:id="@+id/wifiMenu"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone">
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical">
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="WiFi Station"
+                    android:textSize="18sp"
+                    android:textColor="#50E3C2"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnWifiScan"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="SCAN NETWORKS"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#4A90E2"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnWifiConnect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="CONNECT TO NETWORK"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#50E3C2"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnWifiDisconnect"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="DISCONNECT"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#E94B3C"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnWifiStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="STATUS"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#9B59B6"
+                    android:layout_marginBottom="24dp"/>
+
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Bridge Mode"
+                    android:textSize="18sp"
+                    android:textColor="#50E3C2"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnBridgeStart"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="START BRIDGE"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#50E3C2"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnBridgeStop"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="STOP BRIDGE"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#E94B3C"
+                    android:layout_marginBottom="8dp"/>
+
+                <Button
+                    android:id="@+id/btnBridgeStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="BRIDGE STATUS"
+                    android:textColor="#FFFFFF"
+                    android:backgroundTint="#9B59B6"/>
+            </LinearLayout>
+        </ScrollView>
+
+        <!-- BLUETOOTH MENU -->
+        <LinearLayout
+            android:id="@+id/bluetoothMenu"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <Button
+                android:id="@+id/btnBleStatus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="BLE STATUS"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#9B59B6"
+                android:layout_marginBottom="8dp"/>
+
+            <Button
+                android:id="@+id/btnBleSend"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="SEND PING"
+                android:textColor="#FFFFFF"
+                android:backgroundTint="#4A90E2"/>
+        </LinearLayout>
+
+    </FrameLayout>
+
+   <!-- Footer / Status Bar -->
+<LinearLayout
+    android:id="@+id/footer"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_alignParentBottom="true"
+    android:orientation="vertical">
+
+    <TextView
+        android:id="@+id/statusText"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="○ Not Connected"
+        android:textSize="16sp"
+        android:textColor="#AAAAAA"
+        android:padding="16dp"
+        android:gravity="center"
+        android:background="#1A1F3A"/>
+</LinearLayout>
+
+</RelativeLayout>

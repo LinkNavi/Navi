@@ -1,5 +1,6 @@
 // wifi_thingies_menu.c - WiFi advanced features menu
 #include "wifi_thingies_menu.h"
+#include "menu.h"
 #include "wifi_bridge.h"
 #include "wifi_bridge_runtime.h"
 #include "drivers/wifi.h"

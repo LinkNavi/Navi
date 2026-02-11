@@ -10,9 +10,12 @@
 #include "esp_netif.h"
 #include "lwip/lwip_napt.h"
 #include "wifi_bridge.h"
-
+#include <arpa/inet.h>
+#include "lwip/lwip_napt.h"
+#define AP_NETIF_FLAG 1
 static const char *BRIDGE_RUNTIME_TAG = "Bridge_Runtime";
-
+void wifi_thingies_init(void);
+void wifi_thingies_open(void);
 static uint8_t bridge_running = 0;
 static esp_netif_t *ap_netif = NULL;
 static esp_netif_t *sta_netif = NULL;
@@ -22,10 +25,10 @@ static void bridge_event_handler(void* arg, esp_event_base_t event_base,
                                  int32_t event_id, void* event_data) {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STACONNECTED) {
         wifi_event_ap_staconnected_t* event = (wifi_event_ap_staconnected_t*) event_data;
-        ESP_LOGI(BRIDGE_RUNTIME_TAG, "Station "MACSTR" joined AP", MAC2STR(event->mac));
+   //   ESP_LOGI(BRIDGE_RUNTIME_TAG, "Station "MACSTR" joined AP", MAC2STR(event->mac));
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_AP_STADISCONNECTED) {
         wifi_event_ap_stadisconnected_t* event = (wifi_event_ap_stadisconnected_t*) event_data;
-        ESP_LOGI(BRIDGE_RUNTIME_TAG, "Station "MACSTR" left AP", MAC2STR(event->mac));
+ //   ESP_LOGI(BRIDGE_RUNTIME_TAG, "Station "MACSTR" left AP", MAC2STR(event->mac));
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
         ESP_LOGI(BRIDGE_RUNTIME_TAG, "Connected to upstream WiFi");
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -76,10 +79,10 @@ static inline uint8_t bridge_start(void) {
     esp_netif_dhcps_stop(ap_netif);
     esp_netif_ip_info_t ap_ip;
     memset(&ap_ip, 0, sizeof(esp_netif_ip_info_t));
-    inet_pton(AF_INET, "192.168.4.1", &ap_ip.ip);
-    inet_pton(AF_INET, "192.168.4.1", &ap_ip.gw);
-    inet_pton(AF_INET, "255.255.255.0", &ap_ip.netmask);
-    esp_netif_set_ip_info(ap_netif, &ap_ip);
+   inet_aton("192.168.4.1", (ip4_addr_t*)&ap_ip.ip);
+inet_aton("192.168.4.1", (ip4_addr_t*)&ap_ip.gw);
+inet_aton("255.255.255.0", (ip4_addr_t*)&ap_ip.netmask); 
+	esp_netif_set_ip_info(ap_netif, &ap_ip);
     esp_netif_dhcps_start(ap_netif);
     
     // Initialize WiFi

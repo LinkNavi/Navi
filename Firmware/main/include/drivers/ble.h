@@ -17,25 +17,36 @@
 #define BLE_MTU_SIZE 512
 
 // UUIDs matching Android app
-#define BLE_SERVICE_UUID 0x4fafc201, 0x1fb5, 0x459e, 0x8fcc, 0xc5c9c331914b
-#define BLE_CHAR_UUID 0xbeb5483e, 0x36e1, 0x4688, 0xb7f5, 0xea07361b26a8
+#define BLE_SERVICE_UUID 0x4f, 0xaf, 0xc2, 0x01, 0x1f, 0xb5, 0x45, 0x9e, 0x8f, 0xcc, 0xc5, 0xc9, 0xc3, 0x31, 0x91, 0x4b
+#define BLE_CHAR_UUID 0xbe, 0xb5, 0x48, 0x3e, 0x36, 0xe1, 0x46, 0x88, 0xb7, 0xf5, 0xea, 0x07, 0x36, 0x1b, 0x26, 0xa8
 
 // Command buffer
 #define BLE_CMD_BUFFER_SIZE 256
-static char ble_cmd_buffer[BLE_CMD_BUFFER_SIZE];
-static uint16_t ble_cmd_len = 0;
-static uint8_t ble_connected = 0;
 
-// Connection handle
-static uint16_t ble_conn_handle = 0;
+
 
 // Callback for received commands
 typedef void (*ble_cmd_callback_t)(const char *cmd, uint16_t len);
 static ble_cmd_callback_t ble_cmd_callback = NULL;
 
-// Characteristic handles
-static uint16_t ble_char_val_handle;
+extern uint8_t g_ble_connected;
+extern uint16_t g_ble_conn_handle;
+extern char g_ble_cmd_buffer[BLE_CMD_BUFFER_SIZE];
+extern uint16_t g_ble_cmd_len;
+extern ble_cmd_callback_t g_ble_cmd_callback;
+extern uint16_t g_ble_char_val_handle;
 
+#define ble_connected g_ble_connected
+#define ble_conn_handle g_ble_conn_handle
+#define ble_cmd_buffer g_ble_cmd_buffer
+#define ble_cmd_len g_ble_cmd_len
+#define ble_cmd_callback g_ble_cmd_callback
+#define ble_char_val_handle g_ble_char_val_handle
+
+// Check if BLE is connected
+static inline uint8_t ble_is_connected(void) {
+    return g_ble_connected;
+}
 // BLE characteristic access callback
 static int ble_char_access(uint16_t conn_handle, uint16_t attr_handle,
                             struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -141,7 +152,21 @@ static inline void ble_start_advertising(void) {
     // Set flags
     fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
     
+    // IMPORTANT: Add service UUID to advertising data
+    ble_uuid128_t service_uuid;
+    uint8_t uuid_bytes[] = {BLE_SERVICE_UUID};
+    memcpy(&service_uuid.value, uuid_bytes, 16);
+    service_uuid.u.type = BLE_UUID_TYPE_128;
+    
+    fields.uuids128 = &service_uuid;
+    fields.num_uuids128 = 1;
+    fields.uuids128_is_complete = 1;
+    
     ble_gap_adv_set_fields(&fields);
+    
+    // Set connectable and scannable
+    adv_params.conn_mode = BLE_GAP_CONN_MODE_UND;
+    adv_params.disc_mode = BLE_GAP_DISC_MODE_GEN;
     
     // Start advertising
     ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER,
@@ -214,9 +239,35 @@ static inline esp_err_t ble_notify(const char *data, uint16_t len) {
     return ESP_OK;
 }
 
-// Check if BLE is connected
-static inline uint8_t ble_is_connected(void) {
-    return ble_connected;
+// Shared connection state accessor
+static inline uint8_t* _ble_connected_ptr(void) {
+    static uint8_t ble_connected = 0;
+    return &ble_connected;
+}
+
+static inline uint16_t* _ble_conn_handle_ptr(void) {
+    static uint16_t ble_conn_handle = 0;
+    return &ble_conn_handle;
+}
+
+static inline char* _ble_cmd_buffer_ptr(void) {
+    static char ble_cmd_buffer[BLE_CMD_BUFFER_SIZE];
+    return ble_cmd_buffer;
+}
+
+static inline uint16_t* _ble_cmd_len_ptr(void) {
+    static uint16_t ble_cmd_len = 0;
+    return &ble_cmd_len;
+}
+
+static inline ble_cmd_callback_t* _ble_callback_ptr(void) {
+    static ble_cmd_callback_t ble_cmd_callback = NULL;
+    return &ble_cmd_callback;
+}
+
+static inline uint16_t* _ble_char_handle_ptr(void) {
+    static uint16_t ble_char_val_handle = 0;
+    return &ble_char_val_handle;
 }
 
 // Send string via BLE

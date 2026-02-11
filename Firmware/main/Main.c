@@ -23,7 +23,15 @@
 #include "drivers/ble_commands.h"
 
 static const char *TAG = "NAVI";
+#include "drivers/ble.h"
 
+// Global BLE state variables
+uint8_t g_ble_connected = 0;
+uint16_t g_ble_conn_handle = 0;
+char g_ble_cmd_buffer[BLE_CMD_BUFFER_SIZE];
+uint16_t g_ble_cmd_len = 0;
+ble_cmd_callback_t g_ble_cmd_callback = NULL;
+uint16_t g_ble_char_val_handle = 0;
 #include "driver/rmt_tx.h"
 #include "driver/rmt_encoder.h"
 

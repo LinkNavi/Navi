@@ -1,0 +1,31 @@
+R_DEF: Internal format may change without notice
+local
+id backButton
+id bluetoothMenu
+id btnBleSend
+id btnBleStatus
+id btnBluetoothThingies
+id btnBridgeStart
+id btnBridgeStatus
+id btnBridgeStop
+id btnConnect
+id btnDisconnect
+id btnScan
+id btnWifiConnect
+id btnWifiDisconnect
+id btnWifiScan
+id btnWifiStatus
+id btnWifiThingies
+id connectMenu
+id contentArea
+id deviceList
+id footer
+id header
+id mainMenu
+id menuTitle
+id statusText
+id wifiMenu
+layout activity_main
+layout list_item
+mipmap ic_launcher
+string app_name

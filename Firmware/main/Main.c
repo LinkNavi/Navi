@@ -23,10 +23,12 @@ static const char *TAG = "NAVI";
 #define ROTARY_CLK 5
 #define ROTARY_DT 6
 #define ROTARY_SW 7
-#define SD_MOSI 21
-#define SD_MISO 35
-#define SD_CLK 20
-#define SD_CS 19
+// SAFE PINS for LilyGO T-Display-S3
+// Avoids touch GPIOs (3-14), flash (35-37), display clocks (43-44)
+#define SD_MOSI 1
+#define SD_MISO 2
+#define SD_CLK  42
+#define SD_CS   41
 #define IR_PIN 4
 
 Rotary encoder;
@@ -134,7 +136,6 @@ void sd_hardware_test(void) {
 
 void sd_test_init(void) {
     if (sd_initialized) {
-        // Already initialized - ask if they want to reformat
         display_clear();
         set_cursor(2, 10);
         set_font(FONT_TOMTHUMB);
@@ -146,7 +147,7 @@ void sd_test_init(void) {
         println("Press: Confirm");
         display_show();
         
-        uint8_t choice = 0; // 0=No, 1=Yes
+        uint8_t choice = 0;
         while(1) {
             int8_t dir = rotary_read(&encoder);
             if (dir != 0) {
@@ -196,7 +197,7 @@ void sd_test_init(void) {
         println("SD Card OK!");
         
         if (sd_is_fat_formatted()) {
-            println("Already FAT16");
+            println("Already FAT");
             println("");
             println("Format anyway?");
             println("");
@@ -211,7 +212,7 @@ void sd_test_init(void) {
                     do_format = !do_format;
                     display_clear();
                     set_cursor(2, 10);
-                    println("Already FAT16");
+                    println("Already FAT");
                     println("");
                     println("Format anyway?");
                     println("");
@@ -239,7 +240,7 @@ void sd_test_init(void) {
                 display_show();
                 delay(500);
                 
-                ESP_LOGI(TAG, "Formatting SD card as FAT16...");
+                ESP_LOGI(TAG, "Formatting SD card...");
                 if (sd_format_fat16()) {
                     println("Format OK!");
                     ESP_LOGI(TAG, "SD card formatted successfully");
@@ -256,7 +257,7 @@ void sd_test_init(void) {
             display_show();
             delay(500);
             
-            ESP_LOGI(TAG, "Formatting SD card as FAT16...");
+            ESP_LOGI(TAG, "Formatting SD card...");
             if (sd_format_fat16()) {
                 println("Format OK!");
                 ESP_LOGI(TAG, "SD card formatted successfully");
@@ -274,8 +275,8 @@ void sd_test_init(void) {
         set_cursor(2, 10);
         println("SD Init FAILED!");
         println("Check wiring:");
-        println("CS=10 MOSI=11");
-        println("MISO=13 CLK=12");
+        println("MOSI=1 MISO=2");
+        println("CLK=42 CS=41");
         println("");
         println("Press to continue");
         display_show();
@@ -418,8 +419,6 @@ void sd_test_read(void) {
     open_sd_menu();
 }
 
-// ===== IR MENU FUNCTIONS =====
-
 void open_ir_menu(void) {
     menu_set_status("IR Ready");
     menu_set_active(&ir_menu);
@@ -457,7 +456,6 @@ void open_file_browser(void) {
     
     ESP_LOGI(TAG, "File browser opened");
     
-    // File browser loop
     while (1) {
         file_browser_draw();
         
@@ -475,14 +473,11 @@ void open_file_browser(void) {
             if (rotary_button_pressed(&encoder)) {
                 delay(200);
                 
-                // Check if it's a directory
                 if (browser.files[browser.selected].is_dir) {
                     file_browser_enter(browser.selected);
                     break;
                 } else {
-                    // Try to open as text file
                     if (file_browser_read_text(browser.selected)) {
-                        // Text viewer loop
                         while (1) {
                             file_browser_draw_text();
                             
@@ -518,12 +513,10 @@ void open_file_browser(void) {
             delay(5);
         }
         
-        // Check if we should exit browser (back at root with ..)
         if (strcmp(browser.current_path, "/") == 0 && browser.selected == 0 && browser.count == 0) {
             break;
         }
         
-        // Hold button longer to exit
         static uint32_t hold_start = 0;
         if (gpio_get_level((gpio_num_t)ROTARY_SW) == 0) {
             if (hold_start == 0) hold_start = millis();
@@ -555,7 +548,6 @@ void ir_scan_files(void) {
         return;
     }
     
-    // Create /IR folder if it doesn't exist
     sd_mkdir_path("/IR");
     
     uint8_t count = ir_scan_folder("/IR");
@@ -636,10 +628,8 @@ void ir_browse_files(void) {
         return;
     }
     
-    // Rebuild file menu dynamically
     menu_init(&ir_file_menu, "IR Files");
     for (uint8_t i = 0; i < ir_file_list.count && i < MAX_MENU_ITEMS - 1; i++) {
-        // We'll use a static action for now - in real implementation you'd need unique handlers
         menu_add_item_icon(&ir_file_menu, "F", ir_file_list.files[i], NULL);
     }
     menu_add_item_icon(&ir_file_menu, "<", "Back", back_to_ir_menu);
@@ -688,7 +678,7 @@ void about_screen(void) {
     println("Features:");
     println("- Menu system");
     println("- Rotary input");
-    println("- SD FAT16");
+    println("- SD FAT32");
     println("- IR Blaster");
     println("");
     println("Press to return");
@@ -738,7 +728,7 @@ void game_screen(void) {
 }
 
 void app_main(void) {
-    ESP_LOGI(TAG, "Starting Navi firmware v1.1 with IR support");
+    ESP_LOGI(TAG, "Starting Navi firmware v1.2");
     
     init_i2c();
     display_init();
@@ -753,7 +743,6 @@ void app_main(void) {
     display_show();
     delay(1000);
     
-    // Initialize IR
     ir_init(IR_PIN);
     ESP_LOGI(TAG, "IR initialized on pin %d", IR_PIN);
     
@@ -761,7 +750,6 @@ void app_main(void) {
     ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
              ROTARY_CLK, ROTARY_DT, ROTARY_SW);
     
-    // Main menu
     menu_init(&main_menu, "Main Menu");
     menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
     menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
@@ -770,18 +758,15 @@ void app_main(void) {
     menu_add_item_icon(&main_menu, "G", "Game", game_screen);
     menu_add_item_icon(&main_menu, "?", "About", about_screen);
     
-    // Settings menu
     menu_init(&settings_menu, "Settings");
     menu_add_item_icon(&settings_menu, "V", "Display", open_display_settings);
     menu_add_item_icon(&settings_menu, "<", "Back", back_to_main);
     
-    // Display menu
     menu_init(&display_menu, "Display");
     menu_add_item_icon(&display_menu, "!", "Invert", toggle_invert);
     menu_add_item_icon(&display_menu, "+", "Contrast", adjust_contrast);
     menu_add_item_icon(&display_menu, "<", "Back", open_settings);
     
-    // SD menu
     menu_init(&sd_menu, "SD Card");
     menu_add_item_icon(&sd_menu, "I", "Initialize", sd_test_init);
     menu_add_item_icon(&sd_menu, "T", "HW Test", sd_hardware_test);
@@ -789,7 +774,6 @@ void app_main(void) {
     menu_add_item_icon(&sd_menu, "R", "Read Test", sd_test_read);
     menu_add_item_icon(&sd_menu, "<", "Back", back_to_main);
     
-    // IR menu
     menu_init(&ir_menu, "IR Control");
     menu_add_item_icon(&ir_menu, "X", "X-BE-GONE", ir_xbegone_execute);
     menu_add_item_icon(&ir_menu, "S", "Scan Files", ir_scan_files);
@@ -801,7 +785,7 @@ void app_main(void) {
     menu_set_active(&main_menu);
     menu_draw();
     
-    ESP_LOGI(TAG, "Initialization complete, entering main loop");
+    ESP_LOGI(TAG, "Initialization complete");
     
     while(1) {
         int8_t dir = rotary_read(&encoder);

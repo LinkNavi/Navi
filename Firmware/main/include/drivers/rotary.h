@@ -1,7 +1,6 @@
 // rotary.h
 #ifndef ROTARY_H
 #define ROTARY_H
-
 #include <stdint.h>
 #include "driver/gpio.h"
 
@@ -10,6 +9,7 @@ typedef struct {
     uint8_t pin_dt;
     uint8_t pin_sw;
     uint8_t last_clk;
+    uint8_t last_dt;
     uint8_t last_sw;
     int32_t position;
 } Rotary;
@@ -30,6 +30,7 @@ static inline void rotary_init(Rotary *rot, uint8_t clk, uint8_t dt, uint8_t sw)
     gpio_config(&io_conf);
     
     rot->last_clk = gpio_get_level((gpio_num_t)clk);
+    rot->last_dt = gpio_get_level((gpio_num_t)dt);
     rot->last_sw = gpio_get_level((gpio_num_t)sw);
 }
 
@@ -38,18 +39,20 @@ static inline int8_t rotary_read(Rotary *rot) {
     uint8_t dt = gpio_get_level((gpio_num_t)rot->pin_dt);
     int8_t direction = 0;
     
-    if (clk != rot->last_clk) {
-        if (clk == 0) {
-            if (dt == 1) {
-                rot->position++;
-                direction = 1;
-            } else {
-                rot->position--;
-                direction = -1;
-            }
+    // Detect falling edge on CLK
+    if (clk != rot->last_clk && clk == 0) {
+        // Check DT state to determine direction
+        if (dt == 1) {
+            rot->position++;
+            direction = 1;
+        } else {
+            rot->position--;
+            direction = -1;
         }
-        rot->last_clk = clk;
     }
+    
+    rot->last_clk = clk;
+    rot->last_dt = dt;
     
     return direction;
 }

@@ -5,8 +5,8 @@
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-
-#include "xbegone_menu.h"
+#include "nvs_flash.h"
+//#include "xbegone_menu.h"
 #include "drivers/display.h"
 #include "menu.h"
 #include "drivers/rotary.h"
@@ -15,9 +15,14 @@
 #include "drivers/ir.h"
 #include "ir_system.h"
 #include "file_browser.h"
-
+#include "wifi_menu.h"
 static const char *TAG = "NAVI";
 
+#include "driver/rmt_tx.h"
+#include "driver/rmt_encoder.h"
+
+rmt_channel_handle_t ir_channel = NULL;
+rmt_encoder_t *ir_nec_enc = NULL;
 #define I2C_SDA 16
 #define I2C_SCL 17
 #define ROTARY_CLK 5
@@ -28,7 +33,8 @@ static const char *TAG = "NAVI";
 #define SD_CLK  42
 #define SD_CS   41
 #define IR_PIN 4
-
+Menu *current_menu = NULL;
+char status_text[32] = "";
 Rotary encoder;
 Menu main_menu;
 Menu settings_menu;
@@ -607,20 +613,20 @@ void ir_test_signal(void) {
     display_clear();
     set_cursor(2, 10);
     set_font(FONT_TOMTHUMB);
-    println("Testing IR...");
+    println("Testing TCL Roku...");
     println("");
-    println("Sending NEC test");
-    println("Address: 0x00");
-    println("Command: 0x40");
+    println("Power Toggle");
+    println("Addr: EA C7");
+    println("Cmd:  17 E8");
     display_show();
     
-    ESP_LOGI(TAG, "Sending test IR signal");
-    ir_send_nec(0x00, 0x40);
+    ESP_LOGI(TAG, "Sending TCL Roku power toggle");
+    // TCL Roku TV: address 0xEA,0xC7 command 0x17,0xE8
+    ir_send_nec_raw(0xEA, 0xC7, 0x17, 0xE8);
     
     delay(500);
     println("");
     println("Sent!");
-    println("");
     println("Press to continue");
     display_show();
     
@@ -706,7 +712,13 @@ void app_main(void) {
     print("Booting Up!");
     display_show();
     delay(1000);
-    
+    // Initialize NVS for WiFi credentials
+esp_err_t ret = nvs_flash_init();
+if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+    ESP_ERROR_CHECK(nvs_flash_erase());
+    ret = nvs_flash_init();
+}
+ESP_ERROR_CHECK(ret);
     ir_init(IR_PIN);
     ESP_LOGI(TAG, "IR initialized on pin %d", IR_PIN);
     
@@ -714,10 +726,11 @@ void app_main(void) {
     ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
              ROTARY_CLK, ROTARY_DT, ROTARY_SW);
     
-    xbegone_init_menus();
-    
+    //xbegone_init_menus();
+    wifi_menu_init();
     menu_init(&main_menu, "Main Menu");
-    menu_add_item_icon(&main_menu, "X", "X-BE-GONE", xbegone_open_main);
+menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
+//    menu_add_item_icon(&main_menu, "X", "X-BE-GONE", xbegone_open_main);
     menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
     menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
     menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);

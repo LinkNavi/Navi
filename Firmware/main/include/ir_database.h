@@ -7,37 +7,75 @@
 #include "ir_signals.h"
 #include "drivers/ir.h"
 
+// Blast progress info passed to callback
+typedef struct {
+    uint16_t current;       // Current device index (0-based)
+    uint16_t total;         // Total devices to process
+    uint16_t sent;          // Signals sent so far
+    uint8_t  hit;           // 1 if this device had a matching signal and it was sent
+    const char *brand;      // Current device brand
+    const char *model;      // Current device model
+} BlastProgress;
+
+// Return 0 from callback to cancel, 1 to continue
+typedef uint8_t (*blast_progress_cb)(const BlastProgress *progress);
+
+// Parse one hex byte from string like "2F", returns 0 on failure
+static inline uint8_t ir_parse_hex(const char *s, uint8_t *out) {
+    uint8_t val = 0;
+    for (uint8_t i = 0; i < 2; i++) {
+        char c = s[i];
+        val <<= 4;
+        if (c >= '0' && c <= '9') val |= c - '0';
+        else if (c >= 'A' && c <= 'F') val |= c - 'A' + 10;
+        else if (c >= 'a' && c <= 'f') val |= c - 'a' + 10;
+        else return 0;
+    }
+    *out = val;
+    return 1;
+}
+
+// Parse 4 bytes from "XX XX XX XX" format
+static inline uint8_t ir_parse_4bytes(const char *s, uint8_t out[4]) {
+    // Format: "XX XX XX XX" (11 chars) or "XX" (just first byte)
+    if (!s || strlen(s) < 2) return 0;
+    
+    if (!ir_parse_hex(s, &out[0])) return 0;
+    
+    // Try to parse remaining bytes, default to 0
+    out[1] = 0; out[2] = 0; out[3] = 0;
+    
+    if (strlen(s) >= 5 && s[2] == ' ')
+        ir_parse_hex(s + 3, &out[1]);
+    if (strlen(s) >= 8 && s[5] == ' ')
+        ir_parse_hex(s + 6, &out[2]);
+    if (strlen(s) >= 11 && s[8] == ' ')
+        ir_parse_hex(s + 9, &out[3]);
+    
+    return 1;
+}
+
 // Execute IR command from database
+// NEC: sends addr, ~addr, cmd, ~cmd (standard)
+// NECext: sends all 4 address bytes and all 4 command bytes as-is
 static inline void ir_db_execute(const IRSignal *signal) {
     if (!signal) return;
+    if (!signal->protocol || !signal->address || !signal->command) return;
     
-    // Parse protocol
-    if (strcmp(signal->protocol, "NEC") == 0 || strcmp(signal->protocol, "NECext") == 0) {
-        // Parse address (first byte of hex string)
-        uint8_t addr = 0;
-        if (signal->address[0] >= '0' && signal->address[0] <= '9') 
-            addr = (signal->address[0] - '0') << 4;
-        else if (signal->address[0] >= 'A' && signal->address[0] <= 'F') 
-            addr = (signal->address[0] - 'A' + 10) << 4;
-        
-        if (signal->address[1] >= '0' && signal->address[1] <= '9') 
-            addr |= signal->address[1] - '0';
-        else if (signal->address[1] >= 'A' && signal->address[1] <= 'F') 
-            addr |= signal->address[1] - 'A' + 10;
-        
-        // Parse command (first byte of hex string)
-        uint8_t cmd = 0;
-        if (signal->command[0] >= '0' && signal->command[0] <= '9') 
-            cmd = (signal->command[0] - '0') << 4;
-        else if (signal->command[0] >= 'A' && signal->command[0] <= 'F') 
-            cmd = (signal->command[0] - 'A' + 10) << 4;
-        
-        if (signal->command[1] >= '0' && signal->command[1] <= '9') 
-            cmd |= signal->command[1] - '0';
-        else if (signal->command[1] >= 'A' && signal->command[1] <= 'F') 
-            cmd |= signal->command[1] - 'A' + 10;
-        
-        ir_send_nec(addr, cmd);
+    if (strcmp(signal->protocol, "NEC") == 0) {
+        uint8_t addr, cmd;
+        if (!ir_parse_hex(signal->address, &addr)) return;
+        if (!ir_parse_hex(signal->command, &cmd)) return;
+        ir_send_nec(addr, cmd);  // Standard: auto ~addr, ~cmd
+    }
+    else if (strcmp(signal->protocol, "NECext") == 0) {
+        // NECext: addr and cmd bytes from DB are the raw frame bytes
+        // "01 FF 00 00" -> send 0x01, 0xFF as addr pair
+        // "12 ED 00 00" -> send 0x12, 0xED as cmd pair
+        uint8_t addr_bytes[4], cmd_bytes[4];
+        if (!ir_parse_4bytes(signal->address, addr_bytes)) return;
+        if (!ir_parse_4bytes(signal->command, cmd_bytes)) return;
+        ir_send_nec_raw(addr_bytes[0], addr_bytes[1], cmd_bytes[0], cmd_bytes[1]);
     }
 }
 
@@ -53,41 +91,77 @@ static inline const IRSignal* ir_db_find_signal(const IRDevice *device, const ch
     return NULL;
 }
 
-// Check if signal name matches pattern (for power, vol_up, etc)
+// Check if signal name matches pattern
 static inline uint8_t ir_db_signal_matches(const char *signal_name, const char *pattern) {
     char lower[64];
-    for (uint8_t i = 0; i < 63 && signal_name[i]; i++) {
+    uint8_t i;
+    for (i = 0; i < 63 && signal_name[i]; i++) {
         lower[i] = (signal_name[i] >= 'A' && signal_name[i] <= 'Z') ? 
                    signal_name[i] + 32 : signal_name[i];
     }
-    lower[63] = '\0';
+    lower[i] = '\0';
     
     return strstr(lower, pattern) != NULL;
 }
 
-// Execute all devices matching category with specific signal pattern
-static inline uint16_t ir_db_blast_category(const char *category, const char *signal_pattern) {
+// Count how many devices match (for progress total)
+static inline uint16_t ir_db_count_matching(const char *category) {
     uint16_t count = 0;
+    for (size_t i = 0; i < IR_DEVICE_COUNT; i++) {
+        if (category && category[0] && strcmp(IR_DEVICES[i].category, category) != 0)
+            continue;
+        count++;
+    }
+    return count;
+}
+
+// Blast with progress callback and cancel support
+static inline uint16_t ir_db_blast_category_cb(const char *category, const char *signal_pattern, blast_progress_cb cb) {
+    uint16_t sent = 0;
+    uint16_t total = ir_db_count_matching(category);
+    uint16_t current = 0;
     
     for (size_t i = 0; i < IR_DEVICE_COUNT; i++) {
         const IRDevice *dev = &IR_DEVICES[i];
         
-        // Filter by category if specified
-        if (category && category[0] && strcmp(dev->category, category) != 0) {
+        if (category && category[0] && strcmp(dev->category, category) != 0)
             continue;
-        }
         
-        // Find matching signal in device
+        current++;
+        
+        // Try to send matching signal first
+        uint8_t hit = 0;
         for (size_t j = 0; j < dev->signal_count; j++) {
             if (ir_db_signal_matches(dev->signals[j].name, signal_pattern)) {
                 ir_db_execute(&dev->signals[j]);
-                count++;
-                break; // Only one signal per device
+                sent++;
+                hit = 1;
+                break;
+            }
+        }
+        
+        // Then update UI and check cancel
+        if (cb) {
+            BlastProgress prog = {
+                .current = current,
+                .total = total,
+                .sent = sent,
+                .hit = hit,
+                .brand = dev->brand,
+                .model = dev->model
+            };
+            if (!cb(&prog)) {
+                return sent; // Cancelled
             }
         }
     }
     
-    return count;
+    return sent;
+}
+
+// Legacy wrapper without callback
+static inline uint16_t ir_db_blast_category(const char *category, const char *signal_pattern) {
+    return ir_db_blast_category_cb(category, signal_pattern, NULL);
 }
 
 // Get unique categories
@@ -97,7 +171,6 @@ static inline uint8_t ir_db_get_categories(char categories[][32], uint8_t max_co
     for (size_t i = 0; i < IR_DEVICE_COUNT && count < max_count; i++) {
         const char *cat = IR_DEVICES[i].category;
         
-        // Check if already in list
         uint8_t found = 0;
         for (uint8_t j = 0; j < count; j++) {
             if (strcmp(categories[j], cat) == 0) {

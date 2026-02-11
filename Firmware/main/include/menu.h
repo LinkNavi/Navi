@@ -26,8 +26,8 @@ typedef struct {
     int16_t anim_offset;  // For smooth scrolling
 } Menu;
 
-static Menu *current_menu = NULL;
-static char status_text[32] = "";
+extern Menu *current_menu;
+extern char status_text[32];
 
 static inline void menu_init(Menu *menu, const char *title) {
     menu->title = title;

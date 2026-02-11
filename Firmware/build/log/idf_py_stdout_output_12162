@@ -1,3 +1,0 @@
-Command: cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=/home/link/.espressif/python_env/idf5.5_py3.14_env/bin/python -DESP_PLATFORM=1 -DCCACHE_ENABLE=0 /home/link/Programming/Navi/Firmware
--- IDF_TARGET not set, using default target: esp32
--- Found Git: /usr/bin/git (found version "2.52.0")

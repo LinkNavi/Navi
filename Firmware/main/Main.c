@@ -5,7 +5,7 @@
 #include "driver/i2c.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
-
+#include "xbegone_menu.h"
 #define DISPLAY_TYPE DISPLAY_SH1107
 #include "drivers/display.h"
 #include "menu.h"
@@ -581,39 +581,6 @@ void ir_scan_files(void) {
     open_ir_menu();
 }
 
-void ir_xbegone_execute(void) {
-    if (!sd_initialized) {
-        display_clear();
-        set_cursor(2, 10);
-        set_font(FONT_TOMTHUMB);
-        println("No SD card!");
-        display_show();
-        delay(1500);
-        open_ir_menu();
-        return;
-    }
-    
-    if (!ir_folder_scanned || ir_file_list.count == 0) {
-        display_clear();
-        set_cursor(2, 10);
-        println("No IR files!");
-        println("Scan first");
-        display_show();
-        delay(1500);
-        open_ir_menu();
-        return;
-    }
-    
-    ESP_LOGI(TAG, "Executing X-BE-GONE on %d files", ir_file_list.count);
-    ir_xbegone_run_all();
-    
-    while(!rotary_button_pressed(&encoder)) {
-        rotary_read(&encoder);
-        delay(10);
-    }
-    delay(200);
-    open_ir_menu();
-}
 
 void ir_browse_files(void) {
     if (!ir_folder_scanned || ir_file_list.count == 0) {
@@ -775,12 +742,12 @@ void app_main(void) {
     menu_add_item_icon(&sd_menu, "<", "Back", back_to_main);
     
     menu_init(&ir_menu, "IR Control");
-    menu_add_item_icon(&ir_menu, "X", "X-BE-GONE", ir_xbegone_execute);
+    menu_add_item_icon(&ir_menu, "X", "X-BE-GONE", xbegone_open_main); 
     menu_add_item_icon(&ir_menu, "S", "Scan Files", ir_scan_files);
     menu_add_item_icon(&ir_menu, "B", "Browse", ir_browse_files);
     menu_add_item_icon(&ir_menu, "T", "Test Signal", ir_test_signal);
     menu_add_item_icon(&ir_menu, "<", "Back", back_to_main);
-    
+    xbegone_init_menus();
     menu_set_status("Ready");
     menu_set_active(&main_menu);
     menu_draw();

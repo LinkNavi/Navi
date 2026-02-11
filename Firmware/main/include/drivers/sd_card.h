@@ -1,5 +1,5 @@
-#ifndef SD_CARD_H
-#define SD_CARD_H
+#ifndef SD_CARD_IMPROVED_H
+#define SD_CARD_IMPROVED_H
 
 #include <stdint.h>
 #include <string.h>
@@ -11,15 +11,165 @@
 #include "driver/spi_common.h"
 #include "sdmmc_cmd.h"
 #include "esp_log.h"
+#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 #define SD_BLOCK_SIZE 512
 
 // Global state
 static sdmmc_card_t *sd_card = NULL;
 static uint8_t sd_mounted = 0;
+static uint8_t sd_pins_mosi = 1;
+static uint8_t sd_pins_miso = 2;
+static uint8_t sd_pins_clk = 42;
+static uint8_t sd_pins_cs = 41;
 
-// Backwards compatible: Initialize SD card
+// Hardware diagnostic function - NOW USES ACTUAL PINS
+static inline void sd_test_hardware(void) {
+    ESP_LOGI("SD", "=== SD Card Hardware Test ===");
+    ESP_LOGI("SD", "Testing pins: CS=%d MOSI=%d MISO=%d CLK=%d", 
+             sd_pins_cs, sd_pins_mosi, sd_pins_miso, sd_pins_clk);
+    
+    // Test 1: Check all pin levels at rest
+    ESP_LOGI("SD", "Test 1: Pin level check (idle state)");
+    
+    // Configure all pins as inputs with pullups to check their state
+    gpio_config_t io_conf_test = {
+        .pin_bit_mask = (1ULL << sd_pins_miso) | (1ULL << sd_pins_mosi) | 
+                        (1ULL << sd_pins_clk) | (1ULL << sd_pins_cs),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&io_conf_test);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    uint8_t miso_level = gpio_get_level((gpio_num_t)sd_pins_miso);
+    uint8_t mosi_level = gpio_get_level((gpio_num_t)sd_pins_mosi);
+    uint8_t clk_level = gpio_get_level((gpio_num_t)sd_pins_clk);
+    uint8_t cs_level = gpio_get_level((gpio_num_t)sd_pins_cs);
+    
+    ESP_LOGI("SD", "  MISO (pin %d): %s", sd_pins_miso, miso_level ? "HIGH" : "LOW");
+    ESP_LOGI("SD", "  MOSI (pin %d): %s", sd_pins_mosi, mosi_level ? "HIGH" : "LOW");
+    ESP_LOGI("SD", "  CLK  (pin %d): %s", sd_pins_clk, clk_level ? "HIGH" : "LOW");
+    ESP_LOGI("SD", "  CS   (pin %d): %s", sd_pins_cs, cs_level ? "HIGH" : "LOW");
+    
+    // Test 2: Check if MISO line is stuck or floating
+    ESP_LOGI("SD", "Test 2: MISO line stability test (100 samples)");
+    uint8_t miso_high = 0, miso_low = 0;
+    for (int i = 0; i < 100; i++) {
+        if (gpio_get_level((gpio_num_t)sd_pins_miso)) miso_high++;
+        else miso_low++;
+        vTaskDelay(1 / portTICK_PERIOD_MS);
+    }
+    ESP_LOGI("SD", "  MISO high: %d, low: %d", miso_high, miso_low);
+    
+    if (miso_high == 0) {
+        ESP_LOGE("SD", "  FAIL: MISO stuck LOW - Check wiring or add 10K pullup resistor");
+    } else if (miso_low == 0) {
+        ESP_LOGW("SD", "  WARNING: MISO always HIGH - Card may not be inserted or not responding");
+    } else if (miso_high > 90 || miso_low > 90) {
+        ESP_LOGW("SD", "  WARNING: MISO mostly %s - Possible poor connection", 
+                 miso_high > 90 ? "HIGH" : "LOW");
+    } else {
+        ESP_LOGI("SD", "  PASS: MISO line shows activity (likely noise/floating - normal without card communication)");
+    }
+    
+    // Test 3: CS line toggle test
+    ESP_LOGI("SD", "Test 3: CS line toggle test");
+    gpio_config_t cs_test = {
+        .pin_bit_mask = (1ULL << sd_pins_cs),
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&cs_test);
+    
+    gpio_set_level((gpio_num_t)sd_pins_cs, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    uint8_t cs_high = gpio_get_level((gpio_num_t)sd_pins_cs);
+    
+    gpio_set_level((gpio_num_t)sd_pins_cs, 0);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    uint8_t cs_low = gpio_get_level((gpio_num_t)sd_pins_cs);
+    
+    gpio_set_level((gpio_num_t)sd_pins_cs, 1);  // Return to idle (high)
+    
+    if (cs_high && !cs_low) {
+        ESP_LOGI("SD", "  PASS: CS line toggles correctly");
+    } else {
+        ESP_LOGE("SD", "  FAIL: CS line not toggling (high=%d, low=%d)", cs_high, cs_low);
+    }
+    
+    // Test 4: Power supply test (if card is inserted, MISO should eventually go high)
+    ESP_LOGI("SD", "Test 4: Card detection (waiting 500ms for MISO to stabilize)");
+    
+    // Reconfigure MISO as input with pullup
+    gpio_config_t miso_test = {
+        .pin_bit_mask = (1ULL << sd_pins_miso),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE
+    };
+    gpio_config(&miso_test);
+    vTaskDelay(pdMS_TO_TICKS(500));
+    
+    uint8_t final_miso = gpio_get_level((gpio_num_t)sd_pins_miso);
+    ESP_LOGI("SD", "  MISO after stabilization: %s", final_miso ? "HIGH" : "LOW");
+    
+    // Diagnosis
+    ESP_LOGI("SD", "=== Diagnosis ===");
+    
+    if (miso_high == 0) {
+        ESP_LOGE("SD", "Primary Issue: MISO stuck LOW");
+        ESP_LOGE("SD", "Possible causes:");
+        ESP_LOGE("SD", "  1. MISO pin not connected to SD card");
+        ESP_LOGE("SD", "  2. MISO wire shorted to GND");
+        ESP_LOGE("SD", "  3. Wrong MISO pin number in code");
+        ESP_LOGE("SD", "Action: Check wiring, verify pin %d is correct MISO", sd_pins_miso);
+    } else if (!cs_high || cs_low) {
+        ESP_LOGE("SD", "Primary Issue: CS line not working");
+        ESP_LOGE("SD", "Possible causes:");
+        ESP_LOGE("SD", "  1. CS pin conflict with another peripheral");
+        ESP_LOGE("SD", "  2. CS wire not connected");
+        ESP_LOGE("SD", "Action: Verify pin %d is available and connected", sd_pins_cs);
+    } else if (miso_low == 0 && final_miso) {
+        ESP_LOGW("SD", "Card may not be responding (MISO always HIGH)");
+        ESP_LOGW("SD", "Possible causes:");
+        ESP_LOGW("SD", "  1. SD card not inserted");
+        ESP_LOGW("SD", "  2. SD card not powered (check 3.3V)");
+        ESP_LOGW("SD", "  3. SD card defective");
+        ESP_LOGW("SD", "  4. Wiring issue with CLK or MOSI");
+        ESP_LOGW("SD", "Action: Try reinserting card, check power, verify all connections");
+    } else {
+        ESP_LOGI("SD", "Hardware appears functional");
+        ESP_LOGI("SD", "If mount still fails, try:");
+        ESP_LOGI("SD", "  1. Format SD card as FAT32 on computer");
+        ESP_LOGI("SD", "  2. Try different SD card (prefer 1-32GB)");
+        ESP_LOGI("SD", "  3. Add 10K pullup resistors to all SPI lines");
+        ESP_LOGI("SD", "  4. Reduce SPI speed (already at 400kHz)");
+    }
+    
+    ESP_LOGI("SD", "=== Pin Configuration Summary ===");
+    ESP_LOGI("SD", "Update your code if these are wrong:");
+    ESP_LOGI("SD", "#define SD_MOSI %d", sd_pins_mosi);
+    ESP_LOGI("SD", "#define SD_MISO %d", sd_pins_miso);
+    ESP_LOGI("SD", "#define SD_CLK  %d", sd_pins_clk);
+    ESP_LOGI("SD", "#define SD_CS   %d", sd_pins_cs);
+}
+
+// Initialize SD card with improved error handling
 static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t cs) {
+    // Store pins for hardware test
+    sd_pins_mosi = mosi;
+    sd_pins_miso = miso;
+    sd_pins_clk = clk;
+    sd_pins_cs = cs;
+    
     if (sd_mounted) {
         ESP_LOGW("SD", "Already mounted, skipping init");
         return 1;
@@ -27,7 +177,13 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
     
     esp_err_t ret;
     
-    // Configure GPIO with pullups for better signal integrity
+    ESP_LOGI("SD", "Initializing SD card:");
+    ESP_LOGI("SD", "  MOSI: GPIO %d", mosi);
+    ESP_LOGI("SD", "  MISO: GPIO %d", miso);
+    ESP_LOGI("SD", "  CLK:  GPIO %d", clk);
+    ESP_LOGI("SD", "  CS:   GPIO %d", cs);
+    
+    // Configure MISO with pullup for better signal integrity
     gpio_config_t io_conf = {
         .pin_bit_mask = (1ULL << miso),
         .mode = GPIO_MODE_INPUT,
@@ -38,9 +194,9 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
     gpio_config(&io_conf);
     
     ESP_LOGI("SD", "Waiting for card to stabilize...");
-    vTaskDelay(pdMS_TO_TICKS(100));  // Give card time to power up
+    vTaskDelay(pdMS_TO_TICKS(100));
     
-    // SPI bus configuration - conservative settings for compatibility
+    // SPI bus configuration
     spi_bus_config_t bus_cfg = {
         .mosi_io_num = mosi,
         .miso_io_num = miso,
@@ -55,10 +211,13 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
     ret = spi_bus_initialize(SPI2_HOST, &bus_cfg, SDSPI_DEFAULT_DMA);
     if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
         ESP_LOGE("SD", "SPI bus init failed: %s", esp_err_to_name(ret));
+        ESP_LOGE("SD", "Possible causes:");
+        ESP_LOGE("SD", "  - Pin conflict with another SPI device");
+        ESP_LOGE("SD", "  - Invalid pin numbers");
         return 0;
     }
     
-    // SD card slot configuration - use slower speed for reliability
+    // SD card slot configuration
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
     slot_config.gpio_cs = cs;
     slot_config.host_id = SPI2_HOST;
@@ -70,14 +229,14 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
         .allocation_unit_size = 16 * 1024
     };
     
-    // Try multiple speeds with delays
+    // Try multiple speeds with detailed logging
     uint32_t speeds[] = {400, 200, 100};  // kHz
     
     for (uint8_t i = 0; i < 3; i++) {
         sdmmc_host_t host = SDSPI_HOST_DEFAULT();
         host.max_freq_khz = speeds[i];
         
-        ESP_LOGI("SD", "Attempt %d: Mounting at %lukHz...", i + 1, speeds[i]);
+        ESP_LOGI("SD", "Attempt %d: Mounting at %lu kHz...", i + 1, speeds[i]);
         
         ret = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot_config, &mount_config, &sd_card);
         
@@ -88,27 +247,39 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
         
         ESP_LOGW("SD", "Failed: %s", esp_err_to_name(ret));
         
+        // Decode error
+        if (ret == ESP_ERR_TIMEOUT) {
+            ESP_LOGE("SD", "  -> Timeout: Card not responding (check wiring, power, card insertion)");
+        } else if (ret == ESP_ERR_INVALID_RESPONSE) {
+            ESP_LOGE("SD", "  -> Invalid response: Card communication failed (try slower speed)");
+        } else if (ret == ESP_ERR_INVALID_CRC) {
+            ESP_LOGE("SD", "  -> CRC error: Signal integrity issue (check wiring, add pullups)");
+        } else if (ret == ESP_FAIL) {
+            ESP_LOGE("SD", "  -> General failure: Card initialization failed");
+        }
+        
         if (i < 2) {
             ESP_LOGI("SD", "Waiting before retry...");
-            vTaskDelay(pdMS_TO_TICKS(500));  // Wait between retries
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
     
     // All attempts failed
-    ESP_LOGE("SD", "Mount failed after all attempts");
-    ESP_LOGE("SD", "Troubleshooting:");
-    ESP_LOGE("SD", "  1. Remove and reinsert SD card");
-    ESP_LOGE("SD", "  2. Check wiring: CS=%d MOSI=%d MISO=%d CLK=%d", cs, mosi, miso, clk);
-    ESP_LOGE("SD", "  3. Verify 3.3V power to card");
-    ESP_LOGE("SD", "  4. Try formatting card on PC (FAT32)");
-    ESP_LOGE("SD", "  5. Try different SD card");
+    ESP_LOGE("SD", "=== MOUNT FAILED AFTER ALL ATTEMPTS ===");
+    ESP_LOGE("SD", "Troubleshooting steps:");
+    ESP_LOGE("SD", "  1. Run HW Test from SD menu");
+    ESP_LOGE("SD", "  2. Verify wiring: CS=%d MOSI=%d MISO=%d CLK=%d", cs, mosi, miso, clk);
+    ESP_LOGE("SD", "  3. Check SD card is inserted properly");
+    ESP_LOGE("SD", "  4. Verify 3.3V power to SD card");
+    ESP_LOGE("SD", "  5. Format card as FAT32 on computer");
+    ESP_LOGE("SD", "  6. Try different SD card (1-32GB recommended)");
+    ESP_LOGE("SD", "  7. Add 10K pullup resistors to all SPI lines");
     
     return 0;
 
 init_success:
     
-    // Log card info
-    ESP_LOGI("SD", "=== SD Card Initialized ===");
+    ESP_LOGI("SD", "=== SD CARD INITIALIZED SUCCESSFULLY ===");
     ESP_LOGI("SD", "Name: %s", sd_card->cid.name);
     ESP_LOGI("SD", "Type: %s", (sd_card->ocr & (1UL << 30)) ? "SDHC/SDXC" : "SDSC");
     ESP_LOGI("SD", "Speed: %lu kHz", sd_card->max_freq_khz);
@@ -117,59 +288,10 @@ init_success:
     return 1;
 }
 
-// Hardware diagnostic function - call this to test SD card connections
-static inline void sd_test_hardware(void) {
-    ESP_LOGI("SD", "=== SD Card Hardware Test ===");
-    
-    // Test 1: Check if MISO line is stuck
-    ESP_LOGI("SD", "Test 1: MISO line test");
-    uint8_t miso_high = 0, miso_low = 0;
-    for (int i = 0; i < 100; i++) {
-        if (gpio_get_level((gpio_num_t)13)) miso_high++;
-        else miso_low++;
-        vTaskDelay(1 / portTICK_PERIOD_MS);
-    }
-    ESP_LOGI("SD", "  MISO high: %d, low: %d", miso_high, miso_low);
-    if (miso_high == 0) {
-        ESP_LOGE("SD", "  FAIL: MISO stuck low - check wiring or add pullup");
-    } else if (miso_low == 0) {
-        ESP_LOGW("SD", "  WARNING: MISO always high - card may not be responding");
-    } else {
-        ESP_LOGI("SD", "  PASS: MISO line working");
-    }
-    
-    // Test 2: CS line toggle
-    ESP_LOGI("SD", "Test 2: CS line test");
-    gpio_set_level((gpio_num_t)10, 1);
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-    uint8_t cs_high = gpio_get_level((gpio_num_t)10);
-    gpio_set_level((gpio_num_t)10, 0);
-    vTaskDelay(10 / portTICK_PERIOD_MS);
-    uint8_t cs_low = gpio_get_level((gpio_num_t)10);
-    
-    if (cs_high && !cs_low) {
-        ESP_LOGI("SD", "  PASS: CS line working");
-    } else {
-        ESP_LOGE("SD", "  FAIL: CS line not toggling properly");
-    }
-    
-    ESP_LOGI("SD", "=== Diagnosis ===");
-    if (miso_high == 0) {
-        ESP_LOGE("SD", "Likely issue: WIRING - MISO not connected or shorted to GND");
-    } else if (miso_low == 0 && cs_high && !cs_low) {
-        ESP_LOGW("SD", "Likely issue: SD CARD - Not inserted or not responding");
-    } else if (!cs_high || cs_low) {
-        ESP_LOGE("SD", "Likely issue: WIRING - CS line problem");
-    } else {
-        ESP_LOGI("SD", "Hardware looks OK - try different init speeds or card");
-    }
-}
-
-// Backwards compatible: Check if formatted (always true with official driver)
+// Check if formatted (always true with official driver)
 static inline uint8_t sd_is_fat_formatted(void) {
     if (!sd_mounted) return 0;
     
-    // If mounted successfully, it's formatted
     struct stat st;
     if (stat("/sdcard", &st) == 0) {
         ESP_LOGI("SD", "Filesystem is FAT32");
@@ -178,7 +300,7 @@ static inline uint8_t sd_is_fat_formatted(void) {
     return 0;
 }
 
-// Backwards compatible: Format as FAT16 -> now formats as FAT32
+// Format as FAT32
 static inline uint8_t sd_format_fat16(void) {
     if (!sd_mounted) {
         ESP_LOGE("SD", "Card not initialized");
@@ -189,13 +311,13 @@ static inline uint8_t sd_format_fat16(void) {
     esp_vfs_fat_sdcard_unmount("/sdcard", sd_card);
     sd_mounted = 0;
     
-    // Remount with format_if_mount_failed = true
+    // Remount with format
     sdspi_device_config_t slot_config = SDSPI_DEVICE_CONFIG_DEFAULT();
-    slot_config.gpio_cs = 10;  // Hardcoded from your config
+    slot_config.gpio_cs = sd_pins_cs;
     slot_config.host_id = SPI2_HOST;
     
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = true,  // Force format
+        .format_if_mount_failed = true,
         .max_files = 10,
         .allocation_unit_size = 16 * 1024
     };
@@ -215,14 +337,13 @@ static inline uint8_t sd_format_fat16(void) {
     return 0;
 }
 
-// Backwards compatible: Create directory path
+// Create directory path
 static inline uint8_t sd_mkdir_path(const char *path) {
     if (!sd_mounted) return 0;
     
     char full_path[280];
     snprintf(full_path, sizeof(full_path), "/sdcard%s", path);
     
-    // Create each level of directory
     char *p = full_path + 8;  // Skip "/sdcard"
     while (*p) {
         if (*p == '/') {
@@ -243,7 +364,7 @@ static inline uint8_t sd_mkdir_path(const char *path) {
     return 0;
 }
 
-// Backwards compatible: Write file to root
+// Write file to root
 static inline uint8_t sd_write_file(const char *filename, const uint8_t *data, uint32_t size) {
     if (!sd_mounted) return 0;
     
@@ -268,19 +389,17 @@ static inline uint8_t sd_write_file(const char *filename, const uint8_t *data, u
     return 0;
 }
 
-// Backwards compatible: Write file with path
+// Write file with path
 static inline uint8_t sd_write_file_path(const char *path, const uint8_t *data, uint32_t size) {
     if (!sd_mounted) return 0;
     
     char full_path[280];
     snprintf(full_path, sizeof(full_path), "/sdcard%s", path);
     
-    // Create parent directories
     char *last_slash = strrchr(full_path, '/');
-    if (last_slash && last_slash != full_path + 7) {  // Not root
+    if (last_slash && last_slash != full_path + 7) {
         *last_slash = '\0';
         
-        // Recursive mkdir
         char *p = full_path + 8;
         while (*p) {
             if (*p == '/') {
@@ -312,7 +431,7 @@ static inline uint8_t sd_write_file_path(const char *path, const uint8_t *data, 
     return 0;
 }
 
-// Backwards compatible: Read file with path
+// Read file with path
 static inline uint8_t sd_read_file_path(const char *path, uint8_t *buffer, uint32_t *size) {
     if (!sd_mounted) return 0;
     
@@ -325,12 +444,11 @@ static inline uint8_t sd_read_file_path(const char *path, uint8_t *buffer, uint3
         return 0;
     }
     
-    // Get file size
     fseek(f, 0, SEEK_END);
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
     
-    if (fsize < 0 || fsize > 65536) {  // Max 64KB safety limit
+    if (fsize < 0 || fsize > 65536) {
         fclose(f);
         ESP_LOGE("SD", "File too large: %ld bytes", fsize);
         return 0;
@@ -349,43 +467,7 @@ static inline uint8_t sd_read_file_path(const char *path, uint8_t *buffer, uint3
     return 0;
 }
 
-// New helper: Find directory cluster (compatibility stub - not needed with official driver)
-static inline uint16_t sd_find_dir_cluster(const char *path) {
-    // Not needed - official driver handles paths natively
-    return 0;
-}
-
-// Block-level operations (compatibility - not recommended to use directly)
-static inline uint8_t sd_read_block(uint32_t block, uint8_t *buffer) {
-    ESP_LOGW("SD", "sd_read_block() not supported with official driver");
-    return 0;
-}
-
-static inline uint8_t sd_write_block(uint32_t block, const uint8_t *buffer) {
-    ESP_LOGW("SD", "sd_write_block() not supported with official driver");
-    return 0;
-}
-
-// FAT table operations (compatibility stubs)
-typedef struct {
-    char name[11];
-    uint8_t attr;
-    uint8_t reserved[10];
-    uint16_t time;
-    uint16_t date;
-    uint16_t cluster;
-    uint32_t size;
-} __attribute__((packed)) FAT_DirEntry;
-
-static inline uint16_t sd_find_free_cluster(void) {
-    return 0;  // Not needed
-}
-
-static inline void sd_write_fat_entry(uint16_t cluster, uint16_t value) {
-    // Not needed
-}
-
-// Cleanup function (new - call this on shutdown if needed)
+// Cleanup
 static inline void sd_deinit(void) {
     if (sd_mounted) {
         esp_vfs_fat_sdcard_unmount("/sdcard", sd_card);

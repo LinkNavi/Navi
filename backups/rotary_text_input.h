@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "drivers/display.h"
-#include "drivers/rotary_pcnt.h"
+#include "drivers/rotary.h"
 
 // Character set for password input
 static const char CHARSET[] = 
@@ -50,18 +50,18 @@ static inline char text_input_current_char(void) {
 
 // Handle rotary encoder input
 // Returns: 1 if done (user confirmed), 0 if still editing, -1 if cancelled
-static inline int8_t text_input_update(RotaryPCNT *encoder) {
+static inline int8_t text_input_update(Rotary *encoder) {
     uint32_t now = xTaskGetTickCount() * portTICK_PERIOD_MS;
     
     // Debounce - prevent rapid mode changes from interfering with rotation
     uint32_t debounce_ms = (text_input.mode == 1) ? 300 : 50;
     if (now - text_input.last_action_time < debounce_ms) {
         // Still in debounce period - only read encoder, don't act
-        rotary_pcnt_read(encoder);
+        rotary_read(encoder);
         return 0;
     }
     
-    int8_t dir = rotary_pcnt_read(encoder);
+    int8_t dir = rotary_read(encoder);
     
     if (text_input.mode == 0) {
         // Mode 0: Selecting character
@@ -73,7 +73,7 @@ static inline int8_t text_input_update(RotaryPCNT *encoder) {
             text_input.last_action_time = now;
         }
         
-        if (rotary_pcnt_button_pressed(encoder)) {
+        if (rotary_button_pressed(encoder)) {
             // Short press: confirm character
             text_input.mode = 1;
             text_input.last_action_time = now;
@@ -89,7 +89,7 @@ static inline int8_t text_input_update(RotaryPCNT *encoder) {
             vTaskDelay(pdMS_TO_TICKS(100));
         }
         
-        if (rotary_pcnt_button_pressed(encoder)) {
+        if (rotary_button_pressed(encoder)) {
             // Short press: execute action
             char current = text_input_current_char();
             

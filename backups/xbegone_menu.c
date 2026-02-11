@@ -160,8 +160,8 @@ static uint16_t xbegone_blast(const char *pattern, uint8_t *cancelled) {
         println("");
         println("Press to continue");
         display_show();
-        while (!rotary_pcnt_button_pressed(&encoder)) {
-            rotary_pcnt_read(&encoder);
+        while (!rotary_button_pressed(&encoder)) {
+            rotary_read(&encoder);
             delay(10);
         }
         delay(200);
@@ -205,8 +205,8 @@ static void xbegone_show_result(uint16_t sent, uint8_t cancelled) {
     }
     delay(200);
     
-    while (!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while (!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);

@@ -2,14 +2,14 @@
 #include "wifi_menu.h"
 #include "drivers/wifi.h"
 #include "drivers/display.h"
-#include "drivers/rotary_pcnt.h"
+#include "drivers/rotary.h"
 #include "rotary_text_input.h"
 #include "esp_log.h"
 #include <string.h>
 
 static const char *TAG = "WiFi_Menu";
 
-extern RotaryPCNT encoder;
+extern Rotary encoder;
 extern void back_to_main(void);
 
 Menu wifi_main_menu;
@@ -49,8 +49,8 @@ static void wifi_show_status(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -80,8 +80,8 @@ static void wifi_connect_saved(void) {
         println("Press to continue");
         display_show();
         
-        while(!rotary_pcnt_button_pressed(&encoder)) {
-            rotary_pcnt_read(&encoder);
+        while(!rotary_button_pressed(&encoder)) {
+            rotary_read(&encoder);
             delay(10);
         }
         delay(200);
@@ -118,8 +118,8 @@ static void wifi_connect_saved(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -137,8 +137,8 @@ static void wifi_disconnect_network(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -161,8 +161,8 @@ static void wifi_manual_setup(void) {
     println("Press to start");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(300);
@@ -181,8 +181,8 @@ static void wifi_manual_setup(void) {
         println("Press to continue");
         display_show();
         
-        while(!rotary_pcnt_button_pressed(&encoder)) {
-            rotary_pcnt_read(&encoder);
+        while(!rotary_button_pressed(&encoder)) {
+            rotary_read(&encoder);
             delay(10);
         }
         delay(200);
@@ -205,9 +205,9 @@ static void wifi_manual_setup(void) {
     uint8_t skip_password = 0;
     
     while(1) {
-        rotary_pcnt_read(&encoder);
+        rotary_read(&encoder);
         
-        if (rotary_pcnt_button_pressed(&encoder)) {
+        if (rotary_button_pressed(&encoder)) {
             break;
         }
         
@@ -251,7 +251,7 @@ static void wifi_manual_setup(void) {
     
     uint8_t confirm = 0;
     while (1) {
-        int8_t dir = rotary_pcnt_read(&encoder);
+        int8_t dir = rotary_read(&encoder);
         if (dir != 0) {
             confirm = !confirm;
             display_clear();
@@ -277,7 +277,7 @@ static void wifi_manual_setup(void) {
             display_show();
         }
         
-        if (rotary_pcnt_button_pressed(&encoder)) {
+        if (rotary_button_pressed(&encoder)) {
             delay(200);
             break;
         }
@@ -326,8 +326,8 @@ static void wifi_manual_setup(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -367,8 +367,8 @@ static void wifi_scan_and_display(void) {
         println("Press to continue");
         display_show();
         
-        while(!rotary_pcnt_button_pressed(&encoder)) {
-            rotary_pcnt_read(&encoder);
+        while(!rotary_button_pressed(&encoder)) {
+            rotary_read(&encoder);
             delay(10);
         }
         delay(200);
@@ -484,7 +484,7 @@ static void wifi_scan_and_display(void) {
         display_show();
         
         // Handle input
-        int8_t dir = rotary_pcnt_read(&encoder);
+        int8_t dir = rotary_read(&encoder);
         
         if (dir > 0) {
             if (selected < ap_count - 1) {
@@ -502,7 +502,7 @@ static void wifi_scan_and_display(void) {
             }
         }
         
-        if (rotary_pcnt_button_pressed(&encoder)) {
+        if (rotary_button_pressed(&encoder)) {
             delay(200);
             
             // Selected a network - get password if needed
@@ -523,8 +523,8 @@ static void wifi_scan_and_display(void) {
                 println("Press to start");
                 display_show();
                 
-                while(!rotary_pcnt_button_pressed(&encoder)) {
-                    rotary_pcnt_read(&encoder);
+                while(!rotary_button_pressed(&encoder)) {
+                    rotary_read(&encoder);
                     delay(10);
                 }
                 delay(300);
@@ -564,8 +564,8 @@ static void wifi_scan_and_display(void) {
             println("Press to continue");
             display_show();
             
-            while(!rotary_pcnt_button_pressed(&encoder)) {
-                rotary_pcnt_read(&encoder);
+            while(!rotary_button_pressed(&encoder)) {
+                rotary_read(&encoder);
                 delay(10);
             }
             delay(200);

@@ -8,7 +8,7 @@
 #include "nvs_flash.h"
 #include "drivers/display.h"
 #include "menu.h"
-#include "drivers/rotary_pcnt.h"
+#include "drivers/rotary.h"
 #include "drivers/font.h"
 #include "drivers/sd_card.h"
 #include "drivers/ir.h"
@@ -37,7 +37,7 @@ rmt_encoder_t *ir_nec_enc = NULL;
 
 Menu *current_menu = NULL;
 char status_text[32] = "";
-RotaryPCNT encoder;
+Rotary encoder;
 
 // CRITICAL FIX: Move menus to static storage to save stack space
 static Menu main_menu;
@@ -135,8 +135,8 @@ void sd_hardware_test(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -158,7 +158,7 @@ void sd_test_init(void) {
         
         uint8_t choice = 0;
         while(1) {
-            int8_t dir = rotary_pcnt_read(&encoder);
+            int8_t dir = rotary_read(&encoder);
             if (dir != 0) {
                 choice = !choice;
                 display_clear();
@@ -177,7 +177,7 @@ void sd_test_init(void) {
                 display_show();
             }
             
-            if (rotary_pcnt_button_pressed(&encoder)) {
+            if (rotary_button_pressed(&encoder)) {
                 delay(200);
                 break;
             }
@@ -216,7 +216,7 @@ void sd_test_init(void) {
             
             uint8_t do_format = 0;
             while(1) {
-                int8_t dir = rotary_pcnt_read(&encoder);
+                int8_t dir = rotary_read(&encoder);
                 if (dir != 0) {
                     do_format = !do_format;
                     display_clear();
@@ -235,7 +235,7 @@ void sd_test_init(void) {
                     display_show();
                 }
                 
-                if (rotary_pcnt_button_pressed(&encoder)) {
+                if (rotary_button_pressed(&encoder)) {
                     delay(200);
                     break;
                 }
@@ -292,8 +292,8 @@ void sd_test_init(void) {
         ESP_LOGE(TAG, "SD card initialization failed");
     }
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -375,8 +375,8 @@ void sd_test_write(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -420,8 +420,8 @@ void sd_test_read(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -469,7 +469,7 @@ void open_file_browser(void) {
         file_browser_draw();
         
         while (1) {
-            int8_t dir = rotary_pcnt_read(&encoder);
+            int8_t dir = rotary_read(&encoder);
             
             if (dir > 0) {
                 file_browser_next();
@@ -479,7 +479,7 @@ void open_file_browser(void) {
                 break;
             }
             
-            if (rotary_pcnt_button_pressed(&encoder)) {
+            if (rotary_button_pressed(&encoder)) {
                 delay(200);
                 
                 if (browser.files[browser.selected].is_dir) {
@@ -492,7 +492,7 @@ void open_file_browser(void) {
                             
                             uint8_t exit_viewer = 0;
                             while (1) {
-                                int8_t dir = rotary_pcnt_read(&encoder);
+                                int8_t dir = rotary_read(&encoder);
                                 
                                 if (dir > 0) {
                                     text_viewer_scroll_down();
@@ -502,7 +502,7 @@ void open_file_browser(void) {
                                     break;
                                 }
                                 
-                                if (rotary_pcnt_button_pressed(&encoder)) {
+                                if (rotary_button_pressed(&encoder)) {
                                     delay(200);
                                     exit_viewer = 1;
                                     text_viewer_active = 0;
@@ -582,8 +582,8 @@ void ir_scan_files(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -637,8 +637,8 @@ void ir_test_signal(void) {
     println("Press to continue");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -661,8 +661,8 @@ void about_screen(void) {
     println("Press to return");
     display_show();
     
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
+    while(!rotary_button_pressed(&encoder)) {
+        rotary_read(&encoder);
         delay(10);
     }
     delay(200);
@@ -677,7 +677,7 @@ void game_screen(void) {
     ESP_LOGI(TAG, "Starting game");
     
     while(1) {
-        int8_t dir = rotary_pcnt_read(&encoder);
+        int8_t dir = rotary_read(&encoder);
         if (dir > 0) {
             y = (y - 2 + HEIGHT) % HEIGHT;
             score++;
@@ -686,7 +686,7 @@ void game_screen(void) {
             y = (y + 2) % HEIGHT;
             score++;
         }
-        if (rotary_pcnt_button_pressed(&encoder)) break;
+        if (rotary_button_pressed(&encoder)) break;
         
         display_clear();
         fill_circle(x, y, 3, 1);
@@ -732,8 +732,8 @@ void app_main(void) {
     ir_init(IR_PIN);
     ESP_LOGI(TAG, "IR initialized on pin %d", IR_PIN);
     
-    rotary_pcnt_init(&encoder, ROTARY_CLK, ROTARY_DT, ROTARY_SW);
-    ESP_LOGI(TAG, "RotaryPCNT encoder initialized on CLK=%d, DT=%d, SW=%d", 
+    rotary_init(&encoder, ROTARY_CLK, ROTARY_DT, ROTARY_SW);
+    ESP_LOGI(TAG, "Rotary encoder initialized on CLK=%d, DT=%d, SW=%d", 
              ROTARY_CLK, ROTARY_DT, ROTARY_SW);
     
     wifi_menu_init();
@@ -778,7 +778,7 @@ menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
     ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
     
     while(1) {
-        int8_t dir = rotary_pcnt_read(&encoder);
+        int8_t dir = rotary_read(&encoder);
         
         if (dir > 0) {
             menu_next();
@@ -790,7 +790,7 @@ menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
             delay(50);
         }
         
-        if (rotary_pcnt_button_pressed(&encoder)) {
+        if (rotary_button_pressed(&encoder)) {
             menu_select();
             delay(200);
         }

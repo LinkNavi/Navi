@@ -14,7 +14,7 @@
 #include "drivers/sd_card.h"
 #include "drivers/ir.h"
 #include "ir_system.h"
-#include "file_browser.h"
+#include "file_browser_local.h"
 #include "wifi_menu.h"
 #include "rotary_debug.h"
 #include "wifi_thingies_menu.h"

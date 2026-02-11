@@ -1,719 +1,236 @@
-#include "wifi_thingies_menu.h"
-#include "menu.h"
-#include "wifi_bridge.h"
-#include "wifi_bridge_runtime.h"
-#include "modules/wifi_spam.h"
-#include "drivers/wifi.h"
-#include "drivers/display.h"
-#include "drivers/rotary_pcnt.h"
-#include "rotary_text_input.h"
-#include "esp_log.h"
-#include <string.h>
-#include "esp_timer.h"  
-#include "esp_random.h"
-static const char *TAG = "WiFi_Thingies";
+// wifi_thingies_menu.c
+#include "include/menu.h"
+#include "include/modules/wifi_spam.h"
+#include "include/modules/wifi_deauth.h"
+#include "include/modules/wifi_portal.h"
+#include "include/modules/file_browser.h"
+#include "include/drivers/display.h"
+#include "include/drivers/rotary_pcnt.h"
+#include "include/rotary_text_input.h"
+#include "include/drivers/spiffs_storage.h"
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include <stdio.h>
 
-extern RotaryPCNT encoder;
-extern void back_to_main(void);
+extern RotaryPCNT rotary;
 
-Menu wifi_thingies_main_menu;
-Menu wifi_bridge_menu;
-Menu wifi_spam_menu;
+static Menu wifi_menu;
+static Menu spam_submenu;
+static Menu deauth_submenu;
+static Menu portal_submenu;
+static Menu browser_submenu;
 
-static inline void delay(uint32_t ms) {
-    vTaskDelay(pdMS_TO_TICKS(ms));
-}
-
-static void back_to_thingies_main(void) {
-    menu_set_status("Thingies");
-    menu_set_active(&wifi_thingies_main_menu);
-    menu_draw();
-}
-
-static void back_to_bridge_menu(void) {
-    menu_set_status("Bridge");
-    menu_set_active(&wifi_bridge_menu);
-    menu_draw();
-}
-
-static void back_to_spam_menu(void) {
-    menu_set_status("Spam");
-    menu_set_active(&wifi_spam_menu);
-    menu_draw();
-}
-
-// ========== BRIDGE FUNCTIONS (unchanged) ==========
-
-static void bridge_show_config(void) {
-    BridgeConfig *cfg = bridge_get_config();
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    
-    println("Bridge Config:");
-    println("");
-    
-    println("Upstream WiFi:");
-    if (cfg->upstream_ssid[0]) {
-        print("  ");
-        println(cfg->upstream_ssid);
-        print("  Pass: ");
-        if (cfg->upstream_password[0]) {
-            println("****");
-        } else {
-            println("(none)");
-        }
-    } else {
-        println("  (not set)");
-    }
-    
-    println("");
-    println("Bridge AP:");
-    print("  ");
-    println(cfg->bridge_ssid);
-    print("  Pass: ");
-    println(cfg->bridge_password);
-    
-    println("");
-    print("Status: ");
-    println(cfg->enabled ? "Enabled" : "Disabled");
-    
-    println("");
-    println("Press to continue");
-    display_show();
-    
-    while(!rotary_pcnt_button_pressed(&encoder)) {
-        rotary_pcnt_read(&encoder);
-        delay(10);
-    }
-    delay(200);
-    back_to_bridge_menu();
-}
-
-static void bridge_config_upstream(void) {
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Scanning networks");
-    println("for upstream...");
-    display_show();
-    
-    wifi_ap_record_t ap_list[20];
-    uint16_t ap_count = wifi_scan_networks(ap_list, 20);
-    
-    if (ap_count == 0) {
-        display_clear();
-        set_cursor(2, 10);
-        println("No networks found!");
-        println("");
-        println("Press to continue");
-        display_show();
-        
-        while(!rotary_pcnt_button_pressed(&encoder)) {
-            rotary_pcnt_read(&encoder);
-            delay(10);
-        }
-        delay(200);
-        back_to_bridge_menu();
-        return;
-    }
-    
-    uint8_t selected = 0;
-    uint8_t scroll_offset = 0;
-    
-    while (1) {
-        display_clear();
-        
-        fill_rect(0, 0, WIDTH, 12, 1);
-        set_cursor(2, 8);
-        set_font(FONT_TOMTHUMB);
-        
-        const char *title = "Select Upstream";
-        const char *t = title;
-        int16_t tx = 2;
-        while (*t) {
-            if (*t >= TomThumb.first && *t <= TomThumb.last) {
-                const GFXglyph *g = &TomThumb.glyph[*t - TomThumb.first];
-                const uint8_t *bitmap = TomThumb.bitmap + g->bitmapOffset;
-                uint16_t bit_idx = 0;
-                for (uint8_t yy = 0; yy < g->height; yy++) {
-                    for (uint8_t xx = 0; xx < g->width; xx++) {
-                        if (bitmap[bit_idx >> 3] & (0x80 >> (bit_idx & 7))) {
-                            int16_t px = tx + g->xOffset + xx;
-                            int16_t py = 8 + g->yOffset + yy;
-                            if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT)
-                                framebuffer[px + (py/8)*WIDTH] &= ~(1 << (py&7));
-                        }
-                        bit_idx++;
-                    }
-                }
-                tx += g->xAdvance;
-            }
-            t++;
-        }
-        
-        draw_hline(0, 12, WIDTH, 1);
-        
-        uint8_t visible = (HEIGHT - 24) / 10;
-        uint8_t y = 14;
-        
-        for (uint8_t i = scroll_offset; i < ap_count && i < scroll_offset + visible; i++) {
-            if (i == selected) fill_rect(2, y, WIDTH - 4, 10, 1);
-            
-            set_cursor(4, y + 7);
-            print(ap_list[i].authmode != WIFI_AUTH_OPEN ? "L" : "O");
-            set_cursor(cursor_x + 2, y + 7);
-            
-            char ssid_display[18];
-            strncpy(ssid_display, (char *)ap_list[i].ssid, 17);
-            ssid_display[17] = '\0';
-            
-            if (i == selected) {
-                const char *s = ssid_display;
-                while (*s) {
-                    if (*s >= TomThumb.first && *s <= TomThumb.last) {
-                        const GFXglyph *g = &TomThumb.glyph[*s - TomThumb.first];
-                        const uint8_t *bitmap = TomThumb.bitmap + g->bitmapOffset;
-                        uint16_t bit_idx = 0;
-                        for (uint8_t yy = 0; yy < g->height; yy++) {
-                            for (uint8_t xx = 0; xx < g->width; xx++) {
-                                if (bitmap[bit_idx >> 3] & (0x80 >> (bit_idx & 7))) {
-                                    int16_t px = cursor_x + g->xOffset + xx;
-                                    int16_t py = cursor_y + g->yOffset + yy;
-                                    if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT)
-                                        framebuffer[px + (py/8)*WIDTH] &= ~(1 << (py&7));
-                                }
-                                bit_idx++;
-                            }
-                        }
-                        cursor_x += g->xAdvance;
-                    }
-                    s++;
-                }
-            } else {
-                print(ssid_display);
-            }
-            y += 10;
-        }
-        
-        draw_hline(0, HEIGHT - 10, WIDTH, 1);
-        set_cursor(2, HEIGHT - 3);
-        char status[32];
-        snprintf(status, sizeof(status), "%d/%d", selected + 1, ap_count);
-        print(status);
-        display_show();
-        
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir > 0 && selected < ap_count - 1) {
-            selected++;
-            if (selected >= scroll_offset + visible) scroll_offset++;
-        } else if (dir < 0 && selected > 0) {
-            selected--;
-            if (selected < scroll_offset) scroll_offset--;
-        }
-        
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        
-        static uint32_t hold_start = 0;
-        if (gpio_get_level((gpio_num_t)encoder.pin_sw) == 0) {
-            if (hold_start == 0) hold_start = xTaskGetTickCount() * portTICK_PERIOD_MS;
-            else if ((xTaskGetTickCount() * portTICK_PERIOD_MS - hold_start) > 1000) {
-                back_to_bridge_menu(); return;
-            }
-        } else hold_start = 0;
-        delay(5);
-    }
-    
+// WiFi Scanner
+typedef struct {
     char ssid[33];
-    char password[64] = "";
-    strncpy(ssid, (char *)ap_list[selected].ssid, 32);
-    ssid[32] = '\0';
+    uint8_t bssid[6];
+    uint8_t channel;
+    int8_t rssi;
+} wifi_ap_t;
+
+static wifi_ap_t scanned_aps[20];
+static uint8_t scanned_count = 0;
+static uint8_t selected_ap_index = 0;
+
+static void wifi_scan_done(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data) {
+    uint16_t ap_count = 0;
+    esp_wifi_scan_get_ap_num(&ap_count);
+    if (ap_count > 20) ap_count = 20;
     
-    if (ap_list[selected].authmode != WIFI_AUTH_OPEN) {
-        display_clear();
-        set_cursor(2, 10);
-        set_font(FONT_TOMTHUMB);
-        println("Enter password for:");
-        println(ssid);
-        println("");
-        println("Press to start");
-        display_show();
+    wifi_ap_record_t ap_records[20];
+    esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+    
+    scanned_count = ap_count;
+    for (uint8_t i = 0; i < ap_count; i++) {
+        strncpy(scanned_aps[i].ssid, (char*)ap_records[i].ssid, 32);
+        scanned_aps[i].ssid[32] = 0;
+        memcpy(scanned_aps[i].bssid, ap_records[i].bssid, 6);
+        scanned_aps[i].channel = ap_records[i].primary;
+        scanned_aps[i].rssi = ap_records[i].rssi;
+    }
+}
+
+static void wifi_start_scan(void) {
+    static uint8_t wifi_scan_init = 0;
+    
+    if (!wifi_scan_init) {
+        esp_netif_init();
+        esp_event_loop_create_default();
+        esp_netif_create_default_wifi_sta();
         
-        while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-        delay(300);
-        
-        if (!text_input_get(&encoder, "Upstream Pass", password, sizeof(password), NULL)) {
-            back_to_bridge_menu(); return;
-        }
+        wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+        esp_wifi_init(&cfg);
+        esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_SCAN_DONE, &wifi_scan_done, NULL);
+        esp_wifi_set_mode(WIFI_MODE_STA);
+        esp_wifi_start();
+        wifi_scan_init = 1;
     }
     
-    bridge_set_upstream(ssid, password);
-    bridge_save_config();
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Upstream saved!");
-    println(ssid);
-    println("");
-    println("Press to continue");
-    display_show();
-    
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_bridge_menu();
+    wifi_scan_config_t scan_config = {0};
+    scan_config.show_hidden = true;
+    esp_wifi_scan_start(&scan_config, false);
 }
 
-static void bridge_config_ap(void) {
-    char ssid[32] = "";
-    char password[64] = "";
-    BridgeConfig *cfg = bridge_get_config();
-    strncpy(ssid, cfg->bridge_ssid, sizeof(ssid) - 1);
-    strncpy(password, cfg->bridge_password, sizeof(password) - 1);
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Bridge AP Name");
-    println("Press to start");
-    display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(300);
-    
-    if (!text_input_get(&encoder, "Bridge SSID", ssid, sizeof(ssid), ssid)) {
-        back_to_bridge_menu(); return;
-    }
-    if (strlen(ssid) == 0) { back_to_bridge_menu(); return; }
-    
-    display_clear();
-    set_cursor(2, 10);
-    println("Bridge Password");
-    println("Press to start");
-    display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(300);
-    
-    if (!text_input_get(&encoder, "Bridge Pass", password, sizeof(password), password)) {
-        back_to_bridge_menu(); return;
-    }
-    
-    bridge_set_ap(ssid, password);
-    bridge_save_config();
-    
-    display_clear();
-    set_cursor(2, 10);
-    println("Bridge AP saved!");
-    println(ssid);
-    println("");
-    println("Press to continue");
-    display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_bridge_menu();
+// ==================== NAVIGATION ====================
+
+static void goto_spam_menu(void) {
+    menu_set_active(&spam_submenu);
 }
 
-static void bridge_toggle_enabled(void) {
-    BridgeConfig *cfg = bridge_get_config();
-    cfg->enabled = !cfg->enabled;
-    bridge_save_config();
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println(cfg->enabled ? "Bridge ENABLED" : "Bridge DISABLED");
-    println("");
-    println("Press to continue");
-    display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_bridge_menu();
+static void goto_deauth_menu(void) {
+    menu_set_active(&deauth_submenu);
 }
 
-static void bridge_start_now(void) {
+static void goto_portal_menu(void) {
+    menu_set_active(&portal_submenu);
+}
+
+static void goto_browser_menu(void) {
+    menu_set_active(&browser_submenu);
+}
+
+static void goto_wifi_menu(void) {
+    menu_set_active(&wifi_menu);
+}
+
+// ==================== FILE BROWSER ====================
+
+static void browser_start_handler(void) {
     display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Starting bridge...");
+    draw_string(0, 8, "Starting Browser...", FONT_TOMTHUMB);
     display_show();
-    delay(500);
     
-    if (bridge_start()) {
-        BridgeConfig *cfg = bridge_get_config();
+    if (file_browser_start()) {
         display_clear();
-        set_cursor(2, 10);
-        println("Bridge started!");
-        println("");
-        println("AP:");
-        println(cfg->bridge_ssid);
-        println("IP: 192.168.4.1");
+        draw_string(0, 8, "Browser: :8080", FONT_TOMTHUMB);
+        draw_string(0, 16, "IP: 192.168.4.1", FONT_TOMTHUMB);
+        draw_string(0, 24, "Upload portal.html", FONT_TOMTHUMB);
     } else {
         display_clear();
-        set_cursor(2, 10);
-        println("Bridge failed!");
-        println("Check config");
+        draw_string(0, 8, "Failed!", FONT_TOMTHUMB);
     }
-    println("");
-    println("Press to continue");
     display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_bridge_menu();
+    vTaskDelay(pdMS_TO_TICKS(3000));
 }
 
-static void bridge_stop_now(void) {
-    bridge_stop();
+static void browser_stop_handler(void) {
+    file_browser_stop();
     display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Bridge stopped!");
-    println("");
-    println("Press to continue");
+    draw_string(0, 8, "Browser Stopped", FONT_TOMTHUMB);
     display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_bridge_menu();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
-static void bridge_clear_all(void) {
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Clear config?");
-    println("");
-    println("Turn: Yes/No");
-    println("Press: Confirm");
-    display_show();
-    
-    uint8_t confirm = 0;
-    while (1) {
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir != 0) {
-            confirm = !confirm;
-            display_clear();
-            set_cursor(2, 10);
-            println("Clear config?");
-            println("");
-            println(confirm ? "> YES" : "  YES");
-            println(confirm ? "  NO" : "> NO");
-            display_show();
-        }
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        delay(10);
-    }
-    
-    if (confirm) {
-        bridge_clear_config();
-        display_clear();
-        set_cursor(2, 10);
-        println("Config cleared!");
-        println("");
-        println("Press to continue");
-        display_show();
-        while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-        delay(200);
-    }
-    back_to_bridge_menu();
-}
-
-// ========== BEACON SPAM FUNCTIONS ==========
-
-static void spam_show_status(void) {
-    SpamConfig *cfg = spam_get_config();
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    
-    println("Beacon Spam");
-    println("");
-    println(spam_is_running() ? "Status: ACTIVE" : "Status: Stopped");
-    println("");
-    
-    char msg[32];
-    snprintf(msg, sizeof(msg), "Power: %ddBm", cfg->tx_power / 4);
-    println(msg);
-    
-    snprintf(msg, sizeof(msg), "Delay: %dms", cfg->per_ssid_delay);
-    println(msg);
-    
-    snprintf(msg, sizeof(msg), "Burst: %dx", cfg->burst_count);
-    println(msg);
-    
-    snprintf(msg, sizeof(msg), "Dupes: %dx", cfg->duplicates);
-    println(msg);
-    
-    uint8_t ssids = spam_get_ssid_count();
-    uint16_t total = ssids * cfg->duplicates;
-    snprintf(msg, sizeof(msg), "Networks: %d", total);
-    println(msg);
-    
-    if (cfg->use_custom_list) {
-        snprintf(msg, sizeof(msg), "List: Custom (%d)", custom_ssid_count);
-    } else {
-        snprintf(msg, sizeof(msg), "List: Default (%d)", NUM_DEFAULT_SSIDS);
-    }
-    println(msg);
-    
-    println(cfg->randomize_order ? "Order: Random" : "Order: Sequential");
-    
-    println("");
-    println("Press to continue");
-    display_show();
-    
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_spam_menu();
-}
+// ==================== BEACON SPAM ====================
 
 static void spam_start_beacon(void) {
-    SpamConfig *cfg = spam_get_config();
-    uint16_t total = spam_get_ssid_count() * cfg->duplicates;
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Starting spam...");
-    println("");
-    char msg[32];
-    snprintf(msg, sizeof(msg), "%d fake networks", total);
-    println(msg);
-    display_show();
-    delay(500);
-    
     if (spam_start()) {
         display_clear();
-        set_cursor(2, 10);
-        println("Spam ACTIVE!");
-        println("");
-        snprintf(msg, sizeof(msg), "%d beacons cycling", spam_get_beacon_count());
-        println(msg);
-        println("");
-        println("Check WiFi list");
-        println("on other devices");
-    } else {
-        display_clear();
-        set_cursor(2, 10);
-        println("Failed to start!");
+        draw_string(0, 8, "Spam Started!", FONT_TOMTHUMB);
+        SpamConfig *cfg = spam_get_config();
+        char buf[32];
+        snprintf(buf, 32, "Networks: %d", spam_get_ssid_count());
+        draw_string(0, 16, buf, FONT_TOMTHUMB);
+        snprintf(buf, 32, "Power: %ddBm", cfg->tx_power / 4);
+        draw_string(0, 24, buf, FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
-    println("");
-    println("Press to continue");
-    display_show();
-    
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_spam_menu();
 }
 
 static void spam_stop_beacon(void) {
     spam_stop();
     display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Spam stopped!");
-    println("");
-    println("Networks disappear");
-    println("in ~30 seconds");
-    println("");
-    println("Press to continue");
+    draw_string(0, 8, "Spam Stopped", FONT_TOMTHUMB);
     display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_spam_menu();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 static void spam_configure_power(void) {
     SpamConfig *cfg = spam_get_config();
-    uint8_t power_level = cfg->tx_power / 4;
-    char msg[32];
+    uint8_t power = cfg->tx_power;
     
     while (1) {
         display_clear();
-        set_cursor(2, 10);
-        set_font(FONT_TOMTHUMB);
-        println("TX Power");
-        println("");
-        snprintf(msg, sizeof(msg), "> %ddBm", power_level);
-        println(msg);
-        println("");
-        const char *range = power_level < 8 ? "~30ft" : power_level < 14 ? "~100ft" : power_level < 18 ? "~150ft" : "~200ft";
-        print("Range: "); println(range);
-        println("");
-        println("Turn: Adjust");
-        println("Press: Save");
+        draw_string(0, 8, "TX Power", FONT_TOMTHUMB);
+        
+        char buf[32];
+        snprintf(buf, 32, "Power: %ddBm", power / 4);
+        draw_string(0, 24, buf, FONT_TOMTHUMB);
+        
+        if (power >= 80) draw_string(0, 32, "Range: 300-500ft", FONT_TOMTHUMB);
+        else if (power >= 60) draw_string(0, 32, "Range: 200-300ft", FONT_TOMTHUMB);
+        else draw_string(0, 32, "Range: 100-200ft", FONT_TOMTHUMB);
+        
         display_show();
         
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir > 0 && power_level < 21) power_level++;
-        if (dir < 0 && power_level > 2) power_level--;
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        delay(10);
+        int8_t rot = rotary_pcnt_read(&rotary);
+        if (rot > 0 && power < 84) power += 4;
+        if (rot < 0 && power > 8) power -= 4;
+        
+        if (rotary_pcnt_button_pressed(&rotary)) {
+            spam_set_tx_power(power);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            break;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    
-    spam_set_tx_power(power_level * 4);
-    back_to_spam_menu();
 }
 
-static void spam_configure_delay(void) {
+static void spam_configure_interval(void) {
     SpamConfig *cfg = spam_get_config();
-    uint8_t del = cfg->per_ssid_delay;
-    char msg[32];
+    uint16_t interval = cfg->beacon_interval;
     
     while (1) {
         display_clear();
-        set_cursor(2, 10);
-        set_font(FONT_TOMTHUMB);
-        println("Per-SSID Delay");
-        println("");
-        snprintf(msg, sizeof(msg), "> %dms", del);
-        println(msg);
-        println("");
-        if (del == 0) println("MAX SPEED (0ms)");
-        else if (del <= 2) println("Very fast");
-        else if (del <= 5) println("Fast");
-        else println("Conservative");
-        println("");
-        println("Turn: Adjust");
-        println("Press: Save");
+        draw_string(0, 8, "Beacon Interval", FONT_TOMTHUMB);
+        
+        char buf[32];
+        snprintf(buf, 32, "Interval: %dms", interval);
+        draw_string(0, 24, buf, FONT_TOMTHUMB);
         display_show();
         
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir > 0 && del < 50) del++;
-        if (dir < 0 && del > 0) del--;
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        delay(10);
-    }
-    
-    spam_set_per_ssid_delay(del);
-    back_to_spam_menu();
-}
-
-static void spam_configure_duplicates(void) {
-    SpamConfig *cfg = spam_get_config();
-    uint8_t dups = cfg->duplicates;
-    char msg[32];
-    
-    while (1) {
-        display_clear();
-        set_cursor(2, 10);
-        set_font(FONT_TOMTHUMB);
-        println("Duplicates");
-        println("(per SSID)");
-        println("");
-        snprintf(msg, sizeof(msg), "> %dx", dups);
-        println(msg);
-        println("");
-        uint16_t total = spam_get_ssid_count() * dups;
-        snprintf(msg, sizeof(msg), "= %d networks", total);
-        println(msg);
-        println("");
-        println("Higher = more visible");
-        println("networks shown");
-        println("");
-        println("Turn: Adjust");
-        println("Press: Save");
-        display_show();
+        int8_t rot = rotary_pcnt_read(&rotary);
+        if (rot > 0 && interval < 1000) interval += 10;
+        if (rot < 0 && interval > 20) interval -= 10;
         
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir > 0 && dups < 10) dups++;
-        if (dir < 0 && dups > 1) dups--;
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        delay(10);
-    }
-    
-    spam_set_duplicates(dups);
-    // Rebuild if already running
-    if (spam_is_running()) spam_rebuild();
-    back_to_spam_menu();
-}
-
-static void spam_configure_burst(void) {
-    SpamConfig *cfg = spam_get_config();
-    uint8_t burst = cfg->burst_count;
-    char msg[32];
-    
-    while (1) {
-        display_clear();
-        set_cursor(2, 10);
-        set_font(FONT_TOMTHUMB);
-        println("Burst Count");
-        println("");
-        snprintf(msg, sizeof(msg), "> %dx", burst);
-        println(msg);
-        println("");
-        println("Sends per beacon");
-        println("Higher = more");
-        println("reliable visibility");
-        println("");
-        println("Turn: Adjust");
-        println("Press: Save");
-        display_show();
+        if (rotary_pcnt_button_pressed(&rotary)) {
+            spam_set_interval(interval);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            break;
+        }
         
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir > 0 && burst < 10) burst++;
-        if (dir < 0 && burst > 1) burst--;
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        delay(10);
+        vTaskDelay(pdMS_TO_TICKS(50));
     }
-    
-    spam_set_burst(burst);
-    back_to_spam_menu();
 }
 
-static void spam_toggle_random_order(void) {
+static void spam_toggle_random_macs(void) {
     SpamConfig *cfg = spam_get_config();
-    spam_set_random_macs(!cfg->randomize_order);
+    uint8_t current_state = cfg->randomize_order;  // Changed from random_macs
+    spam_set_random_macs(!current_state);
     
     display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Send Order");
-    println("");
-    println(cfg->randomize_order ? "RANDOM" : "SEQUENTIAL");
-    println("");
-    println("Press to continue");
+    draw_string(0, 8, "Random Order", FONT_TOMTHUMB);  // Better label
+    draw_string(0, 16, current_state ? "Disabled" : "Enabled", FONT_TOMTHUMB);
     display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_spam_menu();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
 static void spam_add_custom(void) {
-    char ssid[33] = "";
-    
-    display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Add Custom SSID");
-    println("Press to start");
-    display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(300);
-    
-    if (!text_input_get(&encoder, "Custom SSID", ssid, sizeof(ssid), NULL)) {
-        back_to_spam_menu(); return;
+    char ssid[33];
+    if (text_input_get(&rotary, "Custom SSID", ssid, sizeof(ssid), "")) {
+        if (spam_add_custom_ssid(ssid)) {
+            display_clear();
+            draw_string(0, 8, "Added!", FONT_TOMTHUMB);
+            draw_string(0, 16, ssid, FONT_TOMTHUMB);
+        } else {
+            display_clear();
+            draw_string(0, 8, "Failed - List full", FONT_TOMTHUMB);
+        }
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
     }
-    if (strlen(ssid) == 0) { back_to_spam_menu(); return; }
-    
-    if (spam_add_custom_ssid(ssid)) {
-        display_clear();
-        set_cursor(2, 10);
-        println("Added!");
-        println(ssid);
-        char msg[32];
-        snprintf(msg, sizeof(msg), "Total: %d", custom_ssid_count);
-        println(msg);
-    } else {
-        display_clear();
-        set_cursor(2, 10);
-        println("List full!");
-    }
-    println("");
-    println("Press to continue");
-    display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_spam_menu();
 }
 
 static void spam_toggle_list(void) {
@@ -721,113 +238,274 @@ static void spam_toggle_list(void) {
     spam_use_custom_list(!cfg->use_custom_list);
     
     display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println(cfg->use_custom_list ? "CUSTOM LIST" : "DEFAULT LIST");
-    println("");
-    char msg[32];
-    snprintf(msg, sizeof(msg), "%d SSIDs", spam_get_ssid_count());
-    println(msg);
-    if (cfg->use_custom_list && custom_ssid_count == 0) {
-        println("WARNING: Empty!");
-    }
-    println("");
-    println("Press to continue");
+    draw_string(0, 8, "SSID List", FONT_TOMTHUMB);
+    draw_string(0, 16, cfg->use_custom_list ? "Custom" : "Default", FONT_TOMTHUMB);
     display_show();
-    while(!rotary_pcnt_button_pressed(&encoder)) { rotary_pcnt_read(&encoder); delay(10); }
-    delay(200);
-    back_to_spam_menu();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
-static void spam_clear_custom(void) {
+static void spam_show_status(void) {
+    SpamConfig *cfg = spam_get_config();
+    
     display_clear();
-    set_cursor(2, 10);
-    set_font(FONT_TOMTHUMB);
-    println("Clear custom list?");
-    println("Turn: Yes/No");
-    println("Press: Confirm");
+    draw_string(0, 8, "Beacon Spam", FONT_TOMTHUMB);
+    
+    char buf[32];
+    snprintf(buf, 32, "Status: %s", spam_is_running() ? "RUN" : "STOP");
+    draw_string(0, 16, buf, FONT_TOMTHUMB);
+    
+    snprintf(buf, 32, "Networks: %d", spam_get_ssid_count());
+    draw_string(0, 24, buf, FONT_TOMTHUMB);
+    
+    snprintf(buf, 32, "Power: %ddBm", cfg->tx_power / 4);
+    draw_string(0, 32, buf, FONT_TOMTHUMB);
+    
+    snprintf(buf, 32, "Interval: %dms", cfg->beacon_interval);
+    draw_string(0, 40, buf, FONT_TOMTHUMB);
+    
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+}
+
+// ==================== DEAUTH ====================
+
+static void deauth_scan_networks(void) {
+    display_clear();
+    draw_string(0, 8, "Scanning WiFi...", FONT_TOMTHUMB);
     display_show();
     
-    uint8_t confirm = 0;
-    while (1) {
-        int8_t dir = rotary_pcnt_read(&encoder);
-        if (dir != 0) {
-            confirm = !confirm;
-            display_clear();
-            set_cursor(2, 10);
-            println("Clear custom list?");
-            println(confirm ? "> YES" : "  YES");
-            println(confirm ? "  NO" : "> NO");
-            display_show();
-        }
-        if (rotary_pcnt_button_pressed(&encoder)) { delay(200); break; }
-        delay(10);
-    }
+    wifi_start_scan();
+    vTaskDelay(pdMS_TO_TICKS(3000));
     
-    if (confirm) {
-        spam_clear_custom_ssids();
+    display_clear();
+    char buf[32];
+    snprintf(buf, 32, "Found: %d nets", scanned_count);
+    draw_string(0, 8, buf, FONT_TOMTHUMB);
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(1500));
+}
+
+static void deauth_select_target(void) {
+    if (scanned_count == 0) {
         display_clear();
-        set_cursor(2, 10);
-        println("Cleared!");
+        draw_string(0, 8, "Scan first!", FONT_TOMTHUMB);
         display_show();
-        delay(500);
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        return;
     }
-    back_to_spam_menu();
+    
+    uint8_t index = 0;
+    
+    while (1) {
+        display_clear();
+        draw_string(0, 8, "Select Target", FONT_TOMTHUMB);
+        
+        char buf[32];
+        snprintf(buf, 32, "%d/%d", index + 1, scanned_count);
+        draw_string(0, 16, buf, FONT_TOMTHUMB);
+        
+        draw_string(0, 24, scanned_aps[index].ssid, FONT_TOMTHUMB);
+        
+        snprintf(buf, 32, "Ch:%d RSSI:%d", scanned_aps[index].channel, scanned_aps[index].rssi);
+        draw_string(0, 32, buf, FONT_TOMTHUMB);
+        
+        display_show();
+        
+        int8_t rot = rotary_pcnt_read(&rotary);
+        if (rot > 0) index = (index + 1) % scanned_count;
+        if (rot < 0) index = (index == 0) ? scanned_count - 1 : index - 1;
+        
+        if (rotary_pcnt_button_pressed(&rotary)) {
+            deauth_add_target(scanned_aps[index].bssid, scanned_aps[index].channel, scanned_aps[index].ssid);
+            display_clear();
+            draw_string(0, 8, "Target Added!", FONT_TOMTHUMB);
+            display_show();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            break;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
 }
 
-// ========== MENU NAVIGATION ==========
-
-static void wifi_thingies_open_bridge(void) {
-    menu_set_status("Bridge");
-    menu_set_active(&wifi_bridge_menu);
-    menu_draw();
+static void deauth_start_attack(void) {
+    if (deauth_start()) {
+        display_clear();
+        draw_string(0, 8, "Deauth Started!", FONT_TOMTHUMB);
+        char buf[32];
+        snprintf(buf, 32, "Targets: %d", deauth_get_target_count());
+        draw_string(0, 16, buf, FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    } else {
+        display_clear();
+        draw_string(0, 8, "No targets!", FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
 }
 
-static void wifi_thingies_open_spam(void) {
-    menu_set_status("Spam");
-    menu_set_active(&wifi_spam_menu);
-    menu_draw();
+static void deauth_stop_attack(void) {
+    deauth_stop();
+    display_clear();
+    draw_string(0, 8, "Deauth Stopped", FONT_TOMTHUMB);
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
-void wifi_thingies_open(void) {
-    menu_set_status("Thingies");
-    menu_set_active(&wifi_thingies_main_menu);
-    menu_draw();
+static void deauth_clear_targets_handler(void) {
+    deauth_clear_targets();
+    display_clear();
+    draw_string(0, 8, "Targets Cleared", FONT_TOMTHUMB);
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
-// ========== INIT ==========
+static void deauth_show_targets(void) {
+    display_clear();
+    draw_string(0, 8, "Deauth Targets", FONT_TOMTHUMB);
+    
+    char buf[32];
+    snprintf(buf, 32, "Count: %d", deauth_get_target_count());
+    draw_string(0, 16, buf, FONT_TOMTHUMB);
+    
+    for (uint8_t i = 0; i < deauth_get_target_count() && i < 4; i++) {
+        DeauthTarget *t = deauth_get_target(i);
+        snprintf(buf, 32, "%d: %.20s", i + 1, t->ssid);
+        draw_string(0, 24 + (i * 8), buf, FONT_TOMTHUMB);
+    }
+    
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+}
 
-void wifi_thingies_init(void) {
-    ESP_LOGI(TAG, "Initializing WiFi Thingies menus");
+// ==================== PORTAL ====================
+
+static void portal_select_network(void) {
+    if (scanned_count == 0) {
+        display_clear();
+        draw_string(0, 8, "Scan first!", FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        return;
+    }
     
-    bridge_init();
+    uint8_t index = 0;
     
-    menu_init(&wifi_thingies_main_menu, "WiFi Thingies");
-    menu_add_item_icon(&wifi_thingies_main_menu, "B", "Bridge Mode", wifi_thingies_open_bridge);
-    menu_add_item_icon(&wifi_thingies_main_menu, "S", "Beacon Spam", wifi_thingies_open_spam);
-    menu_add_item_icon(&wifi_thingies_main_menu, "<", "Back", back_to_main);
+    while (1) {
+        display_clear();
+        draw_string(0, 8, "Clone Network", FONT_TOMTHUMB);
+        
+        char buf[32];
+        snprintf(buf, 32, "%d/%d", index + 1, scanned_count);
+        draw_string(0, 16, buf, FONT_TOMTHUMB);
+        draw_string(0, 24, scanned_aps[index].ssid, FONT_TOMTHUMB);
+        
+        display_show();
+        
+        int8_t rot = rotary_pcnt_read(&rotary);
+        if (rot > 0) index = (index + 1) % scanned_count;
+        if (rot < 0) index = (index == 0) ? scanned_count - 1 : index - 1;
+        
+        if (rotary_pcnt_button_pressed(&rotary)) {
+            selected_ap_index = index;
+            display_clear();
+            draw_string(0, 8, "Selected!", FONT_TOMTHUMB);
+            display_show();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+            break;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static void portal_start_handler(void) {
+    if (scanned_count == 0 || selected_ap_index >= scanned_count) {
+        display_clear();
+        draw_string(0, 8, "Select net first!", FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        return;
+    }
     
-    menu_init(&wifi_bridge_menu, "Bridge Mode");
-    menu_add_item_icon(&wifi_bridge_menu, "V", "View Config", bridge_show_config);
-    menu_add_item_icon(&wifi_bridge_menu, "U", "Set Upstream", bridge_config_upstream);
-    menu_add_item_icon(&wifi_bridge_menu, "A", "Set Bridge AP", bridge_config_ap);
-    menu_add_item_icon(&wifi_bridge_menu, "S", "Start Bridge", bridge_start_now);
-    menu_add_item_icon(&wifi_bridge_menu, "T", "Stop Bridge", bridge_stop_now);
-    menu_add_item_icon(&wifi_bridge_menu, "X", "Clear Config", bridge_clear_all);
-    menu_add_item_icon(&wifi_bridge_menu, "<", "Back", back_to_thingies_main);
+    display_clear();
+    draw_string(0, 8, "Starting Portal...", FONT_TOMTHUMB);
+    display_show();
     
-    menu_init(&wifi_spam_menu, "Beacon Spam");
-    menu_add_item_icon(&wifi_spam_menu, "I", "Status", spam_show_status);
-    menu_add_item_icon(&wifi_spam_menu, "S", "Start Spam", spam_start_beacon);
-    menu_add_item_icon(&wifi_spam_menu, "T", "Stop Spam", spam_stop_beacon);
-    menu_add_item_icon(&wifi_spam_menu, "D", "Duplicates", spam_configure_duplicates);
-    menu_add_item_icon(&wifi_spam_menu, "P", "TX Power", spam_configure_power);
-    menu_add_item_icon(&wifi_spam_menu, "V", "Speed", spam_configure_delay);
-    menu_add_item_icon(&wifi_spam_menu, "B", "Burst", spam_configure_burst);
-    menu_add_item_icon(&wifi_spam_menu, "R", "Shuffle", spam_toggle_random_order);
-    // Note: MAX_MENU_ITEMS is 8, so custom SSID management needs a submenu or
-    // you can increase MAX_MENU_ITEMS. For now the most important configs are here.
-     menu_add_item_icon(&wifi_spam_menu, "L", "Toggle List", spam_toggle_list);
-     menu_add_item_icon(&wifi_spam_menu, "A", "Add Custom", spam_add_custom);
-    menu_add_item_icon(&wifi_spam_menu, "<", "Back", back_to_thingies_main);
+    if (portal_start(scanned_aps[selected_ap_index].ssid)) {
+        display_clear();
+        draw_string(0, 8, "Portal Active!", FONT_TOMTHUMB);
+        draw_string(0, 16, scanned_aps[selected_ap_index].ssid, FONT_TOMTHUMB);
+        draw_string(0, 24, "IP: 192.168.4.1", FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(3000));
+    } else {
+        display_clear();
+        draw_string(0, 8, "Failed!", FONT_TOMTHUMB);
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+}
+
+static void portal_stop_handler(void) {
+    portal_stop();
+    display_clear();
+    draw_string(0, 8, "Portal Stopped", FONT_TOMTHUMB);
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+static void portal_view_captures(void) {
+    display_clear();
+    draw_string(0, 8, "Captured Creds", FONT_TOMTHUMB);
+    draw_string(0, 16, "Check SPIFFS:", FONT_TOMTHUMB);
+    draw_string(0, 24, "captures/", FONT_TOMTHUMB);
+    draw_string(0, 32, "credentials.txt", FONT_TOMTHUMB);
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+}
+
+// ==================== MENU INIT ====================
+
+void init_wifi_thingies_submenu(Menu *parent_menu) {
+    menu_init(&wifi_menu, "WiFi Thingies");
+    menu_add_item(&wifi_menu, "Beacon Spam", goto_spam_menu);
+    menu_add_item(&wifi_menu, "Deauth", goto_deauth_menu);
+    menu_add_item(&wifi_menu, "Evil Portal", goto_portal_menu);
+    menu_add_item(&wifi_menu, "File Browser", goto_browser_menu);
+    menu_add_item(&wifi_menu, "Back", NULL);
+    
+    menu_init(&spam_submenu, "Beacon Spam");
+    menu_add_item(&spam_submenu, "Status", spam_show_status);
+    menu_add_item(&spam_submenu, "Start", spam_start_beacon);
+    menu_add_item(&spam_submenu, "Stop", spam_stop_beacon);
+    menu_add_item(&spam_submenu, "TX Power", spam_configure_power);
+    menu_add_item(&spam_submenu, "Interval", spam_configure_interval);
+    menu_add_item(&spam_submenu, "Random MACs", spam_toggle_random_macs);
+    menu_add_item(&spam_submenu, "Add Custom", spam_add_custom);
+    menu_add_item(&spam_submenu, "Toggle List", spam_toggle_list);
+    menu_add_item(&spam_submenu, "Back", goto_wifi_menu);
+    
+    menu_init(&deauth_submenu, "Deauth");
+    menu_add_item(&deauth_submenu, "Scan", deauth_scan_networks);
+    menu_add_item(&deauth_submenu, "Select Target", deauth_select_target);
+    menu_add_item(&deauth_submenu, "Show Targets", deauth_show_targets);
+    menu_add_item(&deauth_submenu, "Start", deauth_start_attack);
+    menu_add_item(&deauth_submenu, "Stop", deauth_stop_attack);
+    menu_add_item(&deauth_submenu, "Clear", deauth_clear_targets_handler);
+    menu_add_item(&deauth_submenu, "Back", goto_wifi_menu);
+    
+    menu_init(&portal_submenu, "Evil Portal");
+    menu_add_item(&portal_submenu, "Scan", deauth_scan_networks);
+    menu_add_item(&portal_submenu, "Select Net", portal_select_network);
+    menu_add_item(&portal_submenu, "Start", portal_start_handler);
+    menu_add_item(&portal_submenu, "Stop", portal_stop_handler);
+    menu_add_item(&portal_submenu, "Captures", portal_view_captures);
+    menu_add_item(&portal_submenu, "Back", goto_wifi_menu);
+    
+    menu_init(&browser_submenu, "File Browser");
+    menu_add_item(&browser_submenu, "Start", browser_start_handler);
+    menu_add_item(&browser_submenu, "Stop", browser_stop_handler);
+    menu_add_item(&browser_submenu, "Back", goto_wifi_menu);
 }

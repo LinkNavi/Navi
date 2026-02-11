@@ -1,4 +1,4 @@
-// file_browser.h - Browse files and view text files with scrolling
+// file_browser.h - Web-Based File Browser/Uploader for SPIFFS
 #ifndef FILE_BROWSER_H
 #define FILE_BROWSER_H
 
@@ -6,380 +6,288 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#include "drivers/display.h"
+#include "esp_http_server.h"
+#include "esp_spiffs.h"
+#include "esp_log.h"
 
-#define MAX_FILES 32
-#define MAX_FILENAME 64
-#define MAX_FILE_CONTENT 8192  // 8KB max file size for viewing
+static const char *BROWSER_TAG = "FileBrowser";
+static httpd_handle_t browser_server = NULL;
 
-typedef struct {
-    char name[MAX_FILENAME];
-    uint8_t is_dir;
-    uint32_t size;
-} FileEntry;
-
-typedef struct {
-    FileEntry files[MAX_FILES];
-    uint8_t count;
-    uint8_t selected;
-    uint8_t scroll_offset;
-    char current_path[256];
-} FileBrowser;
-
-static FileBrowser browser;
-
-// Text viewer state
-static char text_content[MAX_FILE_CONTENT];
-static uint16_t text_lines = 0;
-static uint16_t text_scroll = 0;
-static uint8_t text_viewer_active = 0;
-
-// Initialize browser at path
-static inline void file_browser_init(const char *path) {
-    strncpy(browser.current_path, path, sizeof(browser.current_path) - 1);
-    browser.current_path[sizeof(browser.current_path) - 1] = '\0';
-    browser.count = 0;
-    browser.selected = 0;
-    browser.scroll_offset = 0;
-}
-
-// Scan directory
-static inline uint8_t file_browser_scan(void) {
-    browser.count = 0;
+static inline uint8_t file_browser_init_spiffs(void) {
+    esp_vfs_spiffs_conf_t conf = {
+        .base_path = "/spiffs",
+        .partition_label = NULL,
+        .max_files = 10,
+        .format_if_mount_failed = true
+    };
     
-    char full_path[512];  // Increased from 280
-    snprintf(full_path, sizeof(full_path), "/sdcard%s", browser.current_path);
-    
-    DIR *dir = opendir(full_path);
-    if (!dir) return 0;
-    
-    // Add parent directory if not root
-    if (strcmp(browser.current_path, "/") != 0) {
-        strcpy(browser.files[0].name, "..");
-        browser.files[0].is_dir = 1;
-        browser.files[0].size = 0;
-        browser.count++;
+    esp_err_t ret = esp_vfs_spiffs_register(&conf);
+    if (ret != ESP_OK) {
+        ESP_LOGE(BROWSER_TAG, "SPIFFS mount failed");
+        return 0;
     }
     
-    struct dirent *entry;
-    struct stat st;
+    mkdir("/spiffs/sites", 0755);
+    mkdir("/spiffs/captures", 0755);
     
-    while ((entry = readdir(dir)) != NULL && browser.count < MAX_FILES) {
-        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
-            continue;
-        }
-        
-        // Get file info
-        char entry_path[768];  // Increased from 320: 512 (path) + 256 (filename)
-        snprintf(entry_path, sizeof(entry_path), "%s/%s", full_path, entry->d_name);
-        
-        if (stat(entry_path, &st) == 0) {
-            strncpy(browser.files[browser.count].name, entry->d_name, MAX_FILENAME - 1);
-            browser.files[browser.count].name[MAX_FILENAME - 1] = '\0';
-            browser.files[browser.count].is_dir = S_ISDIR(st.st_mode);
-            browser.files[browser.count].size = st.st_size;
-            browser.count++;
-        }
-    }
-    
-    closedir(dir);
-    return browser.count;
-}
-
-// Navigate into directory
-static inline void file_browser_enter(uint8_t index) {
-    if (index >= browser.count) return;
-    
-    FileEntry *entry = &browser.files[index];
-    
-    if (!entry->is_dir) return;  // Not a directory
-    
-    if (strcmp(entry->name, "..") == 0) {
-        // Go up one level
-        char *last_slash = strrchr(browser.current_path, '/');
-        if (last_slash && last_slash != browser.current_path) {
-            *last_slash = '\0';
-        } else {
-            strcpy(browser.current_path, "/");
-        }
-    } else {
-        // Go into subdirectory
-        size_t len = strlen(browser.current_path);
-        if (browser.current_path[len - 1] != '/') {
-            strncat(browser.current_path, "/", sizeof(browser.current_path) - len - 1);
-        }
-        strncat(browser.current_path, entry->name, sizeof(browser.current_path) - strlen(browser.current_path) - 1);
-    }
-    
-    browser.selected = 0;
-    browser.scroll_offset = 0;
-    file_browser_scan();
-}
-
-// Read text file for viewing
-static inline uint8_t file_browser_read_text(uint8_t index) {
-    if (index >= browser.count) return 0;
-    
-    FileEntry *entry = &browser.files[index];
-    if (entry->is_dir) return 0;
-    
-    char full_path[512];  // Increased from 320
-    snprintf(full_path, sizeof(full_path), "/sdcard%s/%s", browser.current_path, entry->name);
-    
-    FILE *f = fopen(full_path, "r");
-    if (!f) return 0;
-    
-    size_t read = fread(text_content, 1, sizeof(text_content) - 1, f);
-    fclose(f);
-    
-    text_content[read] = '\0';
-    
-    // Count lines
-    text_lines = 0;
-    for (size_t i = 0; i < read; i++) {
-        if (text_content[i] == '\n') text_lines++;
-    }
-    if (read > 0 && text_content[read - 1] != '\n') text_lines++;
-    
-    text_scroll = 0;
-    text_viewer_active = 1;
-    
+    ESP_LOGI(BROWSER_TAG, "SPIFFS initialized");
     return 1;
 }
 
-// Draw file browser
-static inline void file_browser_draw(void) {
-    display_clear();
-    
-    // Title bar
-    fill_rect(0, 0, WIDTH, 12, 1);
-    set_cursor(2, 8);
-    set_font(FONT_TOMTHUMB);
-    
-    // Draw path (inverted)
-    const char *path_display = browser.current_path;
-    if (strlen(path_display) > 20) {
-        path_display = browser.current_path + strlen(browser.current_path) - 20;
+static esp_err_t browser_list_handler(httpd_req_t *req) {
+    DIR *dir = opendir("/spiffs");
+    if (!dir) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
     }
     
-    const char *s = path_display;
-    int16_t tx = 2;
-    while (*s) {
-        if (*s >= TomThumb.first && *s <= TomThumb.last) {
-            const GFXglyph *g = &TomThumb.glyph[*s - TomThumb.first];
-            const uint8_t *bitmap = TomThumb.bitmap + g->bitmapOffset;
-            
-            uint16_t bit_idx = 0;
-            for (uint8_t yy = 0; yy < g->height; yy++) {
-                for (uint8_t xx = 0; xx < g->width; xx++) {
-                    if (bitmap[bit_idx >> 3] & (0x80 >> (bit_idx & 7))) {
-                        int16_t px = tx + g->xOffset + xx;
-                        int16_t py = 8 + g->yOffset + yy;
-                        if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
-                            framebuffer[px + (py/8)*WIDTH] &= ~(1 << (py&7));
-                        }
-                    }
-                    bit_idx++;
-                }
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr_chunk(req, "[");
+    
+    struct dirent *entry;
+    uint8_t first = 1;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        if (entry->d_name[0] == '.') continue;
+        
+        // Truncate filename early to prevent buffer overflow
+        char safe_name[32];
+        strncpy(safe_name, entry->d_name, sizeof(safe_name) - 1);
+        safe_name[sizeof(safe_name) - 1] = '\0';
+        
+        char path[64];
+        snprintf(path, sizeof(path), "/spiffs/%s", safe_name);
+        
+        struct stat st;
+        if (stat(path, &st) != 0) continue;
+        
+        char buf[128];
+        snprintf(buf, sizeof(buf), 
+            "%s{\"name\":\"%s\",\"size\":%ld,\"type\":\"%s\"}", 
+            first ? "" : ",",
+            safe_name, 
+            st.st_size,
+            S_ISDIR(st.st_mode) ? "dir" : "file");
+        
+        httpd_resp_sendstr_chunk(req, buf);
+        first = 0;
+    }
+    
+    closedir(dir);
+    httpd_resp_sendstr_chunk(req, "]");
+    httpd_resp_sendstr_chunk(req, NULL);
+    return ESP_OK;
+}
+
+static esp_err_t browser_upload_handler(httpd_req_t *req) {
+    char filepath[256] = "/spiffs/";
+    size_t buf_len = httpd_req_get_url_query_len(req) + 1;
+    
+    if (buf_len > 1) {
+        char *buf = malloc(buf_len);
+        if (buf && httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char param[128];
+            if (httpd_query_key_value(buf, "path", param, sizeof(param)) == ESP_OK) {
+                strncat(filepath, param, sizeof(filepath) - strlen(filepath) - 1);
             }
-            tx += g->xAdvance;
         }
-        s++;
+        if (buf) free(buf);
     }
     
-    draw_hline(0, 12, WIDTH, 1);
+    FILE *f = fopen(filepath, "w");
+    if (!f) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
     
-    // Files list
-    uint8_t visible = (HEIGHT - 24) / 10;  // Lines visible
-    uint8_t y = 14;
+    char buf[512];
+    int received, total = 0;
     
-    for (uint8_t i = browser.scroll_offset; i < browser.count && i < browser.scroll_offset + visible; i++) {
-        FileEntry *entry = &browser.files[i];
-        
-        if (i == browser.selected) {
-            fill_rect(2, y, WIDTH - 4, 10, 1);
-        }
-        
-        set_cursor(4, y + 7);
-        
-        // Icon
-        if (entry->is_dir) {
-            print(i == browser.selected ? ">" : "D");
-        } else {
-            print(i == browser.selected ? ">" : "F");
-        }
-        
-        // Filename (truncate if needed)
-        char display_name[22];
-        strncpy(display_name, entry->name, 21);
-        display_name[21] = '\0';
-        
-        set_cursor(cursor_x + 2, y + 7);
-        
-        if (i == browser.selected) {
-            // Inverted text
-            const char *n = display_name;
-            while (*n) {
-                if (*n >= TomThumb.first && *n <= TomThumb.last) {
-                    const GFXglyph *g = &TomThumb.glyph[*n - TomThumb.first];
-                    const uint8_t *bitmap = TomThumb.bitmap + g->bitmapOffset;
-                    
-                    uint16_t bit_idx = 0;
-                    for (uint8_t yy = 0; yy < g->height; yy++) {
-                        for (uint8_t xx = 0; xx < g->width; xx++) {
-                            if (bitmap[bit_idx >> 3] & (0x80 >> (bit_idx & 7))) {
-                                int16_t px = cursor_x + g->xOffset + xx;
-                                int16_t py = y + 7 + g->yOffset + yy;
-                                if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
-                                    framebuffer[px + (py/8)*WIDTH] &= ~(1 << (py&7));
-                                }
-                            }
-                            bit_idx++;
-                        }
-                    }
-                    cursor_x += g->xAdvance;
-                }
-                n++;
+    while ((received = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
+        fwrite(buf, 1, received, f);
+        total += received;
+    }
+    
+    fclose(f);
+    ESP_LOGI(BROWSER_TAG, "Uploaded: %s (%d bytes)", filepath, total);
+    httpd_resp_sendstr(req, "OK");
+    return ESP_OK;
+}
+
+static esp_err_t browser_download_handler(httpd_req_t *req) {
+    char filepath[256] = "/spiffs/";
+    size_t buf_len = httpd_req_get_url_query_len(req) + 1;
+    
+    if (buf_len > 1) {
+        char *buf = malloc(buf_len);
+        if (buf && httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char param[128];
+            if (httpd_query_key_value(buf, "path", param, sizeof(param)) == ESP_OK) {
+                strncat(filepath, param, sizeof(filepath) - strlen(filepath) - 1);
             }
-        } else {
-            print(display_name);
         }
-        
-        y += 10;
+        if (buf) free(buf);
     }
     
-    // Status bar
-    draw_hline(0, HEIGHT - 10, WIDTH, 1);
-    set_cursor(2, HEIGHT - 3);
-    char status[32];
-    snprintf(status, sizeof(status), "%d/%d", browser.selected + 1, browser.count);
-    print(status);
+    FILE *f = fopen(filepath, "r");
+    if (!f) {
+        httpd_resp_send_404(req);
+        return ESP_FAIL;
+    }
     
-    display_show();
+    char buf[512];
+    size_t read;
+    while ((read = fread(buf, 1, sizeof(buf), f)) > 0) {
+        httpd_resp_send_chunk(req, buf, read);
+    }
+    
+    fclose(f);
+    httpd_resp_send_chunk(req, NULL, 0);
+    return ESP_OK;
 }
 
-// Draw text viewer
-static inline void file_browser_draw_text(void) {
-    display_clear();
+static esp_err_t browser_delete_handler(httpd_req_t *req) {
+    char filepath[256] = "/spiffs/";
+    size_t buf_len = httpd_req_get_url_query_len(req) + 1;
     
-    // Title bar
-    fill_rect(0, 0, WIDTH, 10, 1);
-    set_cursor(2, 7);
-    set_font(FONT_TOMTHUMB);
-    
-    // "Text Viewer" inverted
-    const char *title = "Text Viewer";
-    const char *t = title;
-    int16_t tx = 2;
-    while (*t) {
-        if (*t >= TomThumb.first && *t <= TomThumb.last) {
-            const GFXglyph *g = &TomThumb.glyph[*t - TomThumb.first];
-            const uint8_t *bitmap = TomThumb.bitmap + g->bitmapOffset;
-            
-            uint16_t bit_idx = 0;
-            for (uint8_t yy = 0; yy < g->height; yy++) {
-                for (uint8_t xx = 0; xx < g->width; xx++) {
-                    if (bitmap[bit_idx >> 3] & (0x80 >> (bit_idx & 7))) {
-                        int16_t px = tx + g->xOffset + xx;
-                        int16_t py = 7 + g->yOffset + yy;
-                        if (px >= 0 && px < WIDTH && py >= 0 && py < HEIGHT) {
-                            framebuffer[px + (py/8)*WIDTH] &= ~(1 << (py&7));
-                        }
-                    }
-                    bit_idx++;
-                }
+    if (buf_len > 1) {
+        char *buf = malloc(buf_len);
+        if (buf && httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
+            char param[128];
+            if (httpd_query_key_value(buf, "path", param, sizeof(param)) == ESP_OK) {
+                strncat(filepath, param, sizeof(filepath) - strlen(filepath) - 1);
             }
-            tx += g->xAdvance;
         }
-        t++;
+        if (buf) free(buf);
     }
     
-    draw_hline(0, 10, WIDTH, 1);
-    
-    // Text content
-    uint8_t visible_lines = (HEIGHT - 20) / 6;  // 6 pixels per line
-    uint16_t y = 12;
-    uint16_t line_num = 0;
-    char *line_start = text_content;
-    
-    // Skip to scroll position
-    for (uint16_t i = 0; i < text_scroll && line_start; i++) {
-        line_start = strchr(line_start, '\n');
-        if (line_start) line_start++;
+    if (remove(filepath) == 0) {
+        ESP_LOGI(BROWSER_TAG, "Deleted: %s", filepath);
+        httpd_resp_sendstr(req, "OK");
+        return ESP_OK;
     }
     
-    // Draw visible lines
-    while (line_start && line_num < visible_lines) {
-        char *line_end = strchr(line_start, '\n');
-        size_t line_len = line_end ? (line_end - line_start) : strlen(line_start);
-        
-        if (line_len > 25) line_len = 25;  // Truncate long lines
-        
-        char line_buf[26];
-        strncpy(line_buf, line_start, line_len);
-        line_buf[line_len] = '\0';
-        
-        set_cursor(2, y);
-        print(line_buf);
-        
-        y += 6;
-        line_num++;
-        
-        if (line_end) {
-            line_start = line_end + 1;
-        } else {
-            break;
-        }
-    }
-    
-    // Status bar with scroll indicator
-    draw_hline(0, HEIGHT - 8, WIDTH, 1);
-    set_cursor(2, HEIGHT - 2);
-    char status[32];
-    snprintf(status, sizeof(status), "Line %d/%d", text_scroll + 1, text_lines);
-    print(status);
-    
-    // Scroll indicator
-    if (text_lines > visible_lines) {
-        uint8_t bar_height = (HEIGHT - 20) * visible_lines / text_lines;
-        uint8_t bar_pos = (HEIGHT - 20) * text_scroll / text_lines;
-        fill_rect(WIDTH - 3, 11 + bar_pos, 2, bar_height, 1);
-    }
-    
-    display_show();
+    httpd_resp_send_500(req);
+    return ESP_FAIL;
 }
 
-// Navigation
-static inline void file_browser_next(void) {
-    if (browser.selected < browser.count - 1) {
-        browser.selected++;
-        uint8_t visible = (HEIGHT - 24) / 10;
-        if (browser.selected >= browser.scroll_offset + visible) {
-            browser.scroll_offset++;
-        }
-    }
+static esp_err_t browser_ui_handler(httpd_req_t *req) {
+    const char *html = 
+        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+        "<title>File Manager</title><style>"
+        "*{margin:0;padding:0;box-sizing:border-box}"
+        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f0f0f;color:#e0e0e0;padding:20px}"
+        ".container{max-width:900px;margin:0 auto}"
+        "h1{font-size:28px;font-weight:600;margin-bottom:8px;color:#fff}"
+        ".subtitle{color:#888;font-size:14px;margin-bottom:24px}"
+        ".upload-area{background:#1a1a1a;border:2px dashed #333;border-radius:12px;padding:32px;margin-bottom:24px;text-align:center;transition:all .3s}"
+        ".upload-area:hover{border-color:#555;background:#222}"
+        ".upload-area.drag-over{border-color:#0066ff;background:#001a33}"
+        "input[type=file]{display:none}"
+        ".upload-btn{background:#0066ff;color:#fff;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:background .2s}"
+        ".upload-btn:hover{background:#0052cc}"
+        ".path-input{width:100%;padding:10px 16px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-size:14px;margin-top:12px}"
+        ".files{background:#1a1a1a;border-radius:12px;overflow:hidden}"
+        ".file-header{display:grid;grid-template-columns:40px 1fr 100px 140px;padding:12px 16px;background:#222;border-bottom:1px solid #333;font-size:12px;font-weight:600;color:#888;text-transform:uppercase}"
+        ".file-item{display:grid;grid-template-columns:40px 1fr 100px 140px;align-items:center;padding:12px 16px;border-bottom:1px solid #222;transition:background .2s}"
+        ".file-item:hover{background:#252525}"
+        ".file-item:last-child{border-bottom:none}"
+        ".file-icon{font-size:20px}"
+        ".file-name{color:#e0e0e0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+        ".file-size{color:#888;font-size:13px}"
+        ".file-actions{display:flex;gap:8px}"
+        ".btn{padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s}"
+        ".btn-download{background:#1a472a;color:#4ade80}"
+        ".btn-download:hover{background:#22543d}"
+        ".btn-delete{background:#4a1a1a;color:#f87171}"
+        ".btn-delete:hover{background:#5a2828}"
+        ".empty{padding:48px;text-align:center;color:#666}"
+        ".progress{display:none;background:#0066ff;height:3px;position:fixed;top:0;left:0;right:0;animation:progress 1s ease-in-out infinite}"
+        "@keyframes progress{0%{width:0}50%{width:70%}100%{width:100%}}"
+        "</style></head><body><div class='container'>"
+        "<h1>📁 File Manager</h1><div class='subtitle'>SPIFFS Storage</div>"
+        "<div class='upload-area' id='uploadArea'>"
+        "<div style='font-size:48px;margin-bottom:12px'>📤</div>"
+        "<div style='font-size:16px;font-weight:500;margin-bottom:8px'>Drop files here or click to upload</div>"
+        "<div style='color:#888;font-size:13px;margin-bottom:16px'>Max 5MB per file</div>"
+        "<input type='file' id='file' multiple>"
+        "<button class='upload-btn' onclick='document.getElementById(\"file\").click()'>Choose Files</button>"
+        "<input type='text' class='path-input' id='path' placeholder='Path (e.g., sites/portal.html)'>"
+        "</div><div class='files'>"
+        "<div class='file-header'><div></div><div>Name</div><div>Size</div><div>Actions</div></div>"
+        "<div id='fileList'></div></div><div class='progress' id='progress'></div></div>"
+        "<script>"
+        "const uploadArea=document.getElementById('uploadArea');"
+        "const fileInput=document.getElementById('file');"
+        "const progress=document.getElementById('progress');"
+        "['dragenter','dragover','dragleave','drop'].forEach(e=>{"
+        "uploadArea.addEventListener(e,ev=>ev.preventDefault());});"
+        "uploadArea.addEventListener('dragenter',()=>uploadArea.classList.add('drag-over'));"
+        "uploadArea.addEventListener('dragleave',()=>uploadArea.classList.remove('drag-over'));"
+        "uploadArea.addEventListener('drop',e=>{"
+        "uploadArea.classList.remove('drag-over');handleFiles(e.dataTransfer.files);});"
+        "fileInput.addEventListener('change',()=>handleFiles(fileInput.files));"
+        "function handleFiles(files){Array.from(files).forEach(f=>{"
+        "const p=document.getElementById('path').value||f.name;"
+        "progress.style.display='block';"
+        "fetch('/api/upload?path='+encodeURIComponent(p),{method:'POST',body:f})"
+        ".then(()=>{progress.style.display='none';load();})"
+        ".catch(()=>progress.style.display='none');});}"
+        "function load(){fetch('/api/list').then(r=>r.json()).then(d=>{"
+        "const list=document.getElementById('fileList');"
+        "if(!d.length){list.innerHTML='<div class=\"empty\">No files yet</div>';return;}"
+        "list.innerHTML=d.map(f=>"
+        "`<div class='file-item'>"
+        "<div class='file-icon'>${f.type==='dir'?'📁':'📄'}</div>"
+        "<div class='file-name'>${f.name}</div>"
+        "<div class='file-size'>${f.size<1024?f.size+'B':(f.size/1024).toFixed(1)+'KB'}</div>"
+        "<div class='file-actions'>"
+        "<button class='btn btn-download' onclick='download(\"${f.name}\")'>Download</button>"
+        "<button class='btn btn-delete' onclick='del(\"${f.name}\")'>Delete</button>"
+        "</div></div>`).join('');});}"
+        "function download(n){window.open('/api/download?path='+encodeURIComponent(n));}"
+        "function del(n){if(confirm('Delete '+n+'?'))fetch('/api/delete?path='+encodeURIComponent(n)).then(load);}"
+        "load();</script></body></html>";
+    
+    httpd_resp_send(req, html, strlen(html));
+    return ESP_OK;
 }
 
-static inline void file_browser_prev(void) {
-    if (browser.selected > 0) {
-        browser.selected--;
-        if (browser.selected < browser.scroll_offset) {
-            browser.scroll_offset--;
-        }
+static inline uint8_t file_browser_start(void) {
+    if (browser_server) return 0;
+    if (!file_browser_init_spiffs()) return 0;
+    
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.server_port = 8080;
+    config.uri_match_fn = httpd_uri_match_wildcard;
+    
+    if (httpd_start(&browser_server, &config) != ESP_OK) {
+        ESP_LOGE(BROWSER_TAG, "Failed to start server");
+        return 0;
     }
+    
+    httpd_uri_t uri_ui = {.uri = "/", .method = HTTP_GET, .handler = browser_ui_handler};
+    httpd_uri_t uri_list = {.uri = "/api/list", .method = HTTP_GET, .handler = browser_list_handler};
+    httpd_uri_t uri_upload = {.uri = "/api/upload", .method = HTTP_POST, .handler = browser_upload_handler};
+    httpd_uri_t uri_download = {.uri = "/api/download", .method = HTTP_GET, .handler = browser_download_handler};
+    httpd_uri_t uri_delete = {.uri = "/api/delete", .method = HTTP_GET, .handler = browser_delete_handler};
+    
+    httpd_register_uri_handler(browser_server, &uri_ui);
+    httpd_register_uri_handler(browser_server, &uri_list);
+    httpd_register_uri_handler(browser_server, &uri_upload);
+    httpd_register_uri_handler(browser_server, &uri_download);
+    httpd_register_uri_handler(browser_server, &uri_delete);
+    
+    ESP_LOGI(BROWSER_TAG, "File browser started on port 8080");
+    return 1;
 }
 
-// Text viewer scroll
-static inline void text_viewer_scroll_down(void) {
-    uint8_t visible_lines = (HEIGHT - 20) / 6;
-    if (text_scroll + visible_lines < text_lines) {
-        text_scroll++;
-    }
-}
-
-static inline void text_viewer_scroll_up(void) {
-    if (text_scroll > 0) {
-        text_scroll--;
+static inline void file_browser_stop(void) {
+    if (browser_server) {
+        httpd_stop(browser_server);
+        browser_server = NULL;
+        ESP_LOGI(BROWSER_TAG, "File browser stopped");
     }
 }
 

@@ -276,6 +276,183 @@ static void spam_show_status(void) {
 
 // ==================== DEAUTH ====================
 
+static void deauth_select_level(void) {
+    deauth_init_config();
+    DeauthLevel level = DEAUTH_LEVEL_SINGLE;
+    
+    while (1) {
+        display_clear();
+        set_cursor(2, 8);
+        set_font(FONT_TOMTHUMB);
+        
+        println("Aggression Level");
+        println("");
+        
+        // Show all levels with descriptions
+        if (level == DEAUTH_LEVEL_SINGLE) print("> ");
+        else print("  ");
+        println("1: Single Target");
+        
+        if (level == DEAUTH_LEVEL_MULTI) print("> ");
+        else print("  ");
+        println("2: Multi Target");
+        
+        if (level == DEAUTH_LEVEL_AGGRESSIVE) print("> ");
+        else print("  ");
+        println("3: Aggressive");
+        
+        if (level == DEAUTH_LEVEL_NUCLEAR) print("> ");
+        else print("  ");
+        println("4: NUCLEAR");
+        
+        println("");
+        println("Turn: Select");
+        println("Press: Confirm");
+        
+        display_show();
+        
+        int8_t rot = rotary_pcnt_read(&encoder);
+        if (rot > 0) level = (level + 1) % 4;
+        if (rot < 0) level = (level + 3) % 4;
+        
+        if (rotary_pcnt_button_pressed(&encoder)) {
+            deauth_set_level(level);
+            vTaskDelay(pdMS_TO_TICKS(200));
+            break;
+        }
+        
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+}
+
+static void deauth_show_config(void) {
+    DeauthConfig *cfg = deauth_get_config();
+    
+    display_clear();
+    set_cursor(2, 8);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Deauth Config");
+    println("");
+    
+    char buf[32];
+    snprintf(buf, 32, "Level: %s", deauth_get_level_name(cfg->level));
+    println(buf);
+    
+    snprintf(buf, 32, "Burst: %d pkts", cfg->packets_per_burst);
+    println(buf);
+    
+    snprintf(buf, 32, "Interval: %dms", cfg->burst_interval);
+    println(buf);
+    
+    snprintf(buf, 32, "Ch Hop: %s", cfg->channel_hop ? "ON" : "OFF");
+    println(buf);
+    
+    snprintf(buf, 32, "Broadcast: %s", cfg->broadcast_mode ? "ON" : "OFF");
+    println(buf);
+    
+    println("");
+    
+    if (deauth_is_running()) {
+        snprintf(buf, 32, "Packets: %lu",(long) deauth_get_packet_count());
+        println(buf);
+    }
+    
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+}
+
+static void deauth_start_attack(void) {
+    if (deauth_get_target_count() == 0) {
+        display_clear();
+        set_cursor(2, 8);
+        set_font(FONT_TOMTHUMB);
+        println("No targets!");
+        println("");
+        println("Scan & select");
+        println("networks first");
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+        return;
+    }
+    
+    if (deauth_start()) {
+        display_clear();
+        set_cursor(2, 8);
+        set_font(FONT_TOMTHUMB);
+        
+        DeauthConfig *cfg = deauth_get_config();
+        
+        println("Deauth Started!");
+        println("");
+        
+        char buf[32];
+        snprintf(buf, 32, "Level: %s", deauth_get_level_name(cfg->level));
+        println(buf);
+        
+        snprintf(buf, 32, "Targets: %d", deauth_get_target_count());
+        println(buf);
+        
+        println("");
+        
+        switch (cfg->level) {
+            case DEAUTH_LEVEL_SINGLE:
+                println("Focused attack");
+                break;
+            case DEAUTH_LEVEL_MULTI:
+                println("Multiple targets");
+                break;
+            case DEAUTH_LEVEL_AGGRESSIVE:
+                println("Channel hopping!");
+                break;
+            case DEAUTH_LEVEL_NUCLEAR:
+                println("MAXIMUM CHAOS!");
+                break;
+        }
+        
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(2000));
+    } else {
+        display_clear();
+        set_cursor(2, 8);
+        println("Failed to start!");
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
+    }
+}
+
+static void deauth_show_stats(void) {
+    display_clear();
+    set_cursor(2, 8);
+    set_font(FONT_TOMTHUMB);
+    
+    println("Deauth Stats");
+    println("");
+    
+    char buf[32];
+    snprintf(buf, 32, "Status: %s", deauth_is_running() ? "RUNNING" : "STOPPED");
+    println(buf);
+    
+    snprintf(buf, 32, "Targets: %d", deauth_get_target_count());
+    println(buf);
+    
+    snprintf(buf, 32, "Packets: %lu", (long)deauth_get_packet_count());
+    println(buf);
+    
+    DeauthConfig *cfg = deauth_get_config();
+    snprintf(buf, 32, "Level: %s", deauth_get_level_name(cfg->level));
+    println(buf);
+    
+    if (deauth_is_running()) {
+        uint32_t pps = deauth_get_packet_count() / 
+                       ((xTaskGetTickCount() * portTICK_PERIOD_MS) / 1000 + 1);
+        snprintf(buf, 32, "Rate: %lu pkt/s",(long) pps);
+        println(buf);
+    }
+    
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(3000));
+}
 static void deauth_scan_networks(void) {
     display_clear();
     draw_string(0, 8, "Scanning WiFi...", FONT_TOMTHUMB);
@@ -335,22 +512,7 @@ static void deauth_select_target(void) {
     }
 }
 
-static void deauth_start_attack(void) {
-    if (deauth_start()) {
-        display_clear();
-        draw_string(0, 8, "Deauth Started!", FONT_TOMTHUMB);
-        char buf[32];
-        snprintf(buf, 32, "Targets: %d", deauth_get_target_count());
-        draw_string(0, 16, buf, FONT_TOMTHUMB);
-        display_show();
-        vTaskDelay(pdMS_TO_TICKS(2000));
-    } else {
-        display_clear();
-        draw_string(0, 8, "No targets!", FONT_TOMTHUMB);
-        display_show();
-        vTaskDelay(pdMS_TO_TICKS(1500));
-    }
-}
+
 
 static void deauth_stop_attack(void) {
     deauth_stop();
@@ -500,14 +662,17 @@ void init_wifi_thingies_submenu(Menu *parent_menu) {
     menu_add_item(&spam_submenu, "Toggle List", spam_toggle_list);
     menu_add_item(&spam_submenu, "Back", goto_wifi_menu);
     
-    menu_init(&deauth_submenu, "Deauth");
-    menu_add_item(&deauth_submenu, "Scan", deauth_scan_networks);
-    menu_add_item(&deauth_submenu, "Select Target", deauth_select_target);
-    menu_add_item(&deauth_submenu, "Show Targets", deauth_show_targets);
-    menu_add_item(&deauth_submenu, "Start", deauth_start_attack);
-    menu_add_item(&deauth_submenu, "Stop", deauth_stop_attack);
-    menu_add_item(&deauth_submenu, "Clear", deauth_clear_targets_handler);
-    menu_add_item(&deauth_submenu, "Back", goto_wifi_menu);
+ menu_init(&deauth_submenu, "Deauth");
+menu_add_item(&deauth_submenu, "Set Level", deauth_select_level);
+menu_add_item(&deauth_submenu, "Config", deauth_show_config);
+menu_add_item(&deauth_submenu, "Scan", deauth_scan_networks);
+menu_add_item(&deauth_submenu, "Select Target", deauth_select_target);
+menu_add_item(&deauth_submenu, "Show Targets", deauth_show_targets);
+menu_add_item(&deauth_submenu, "Start", deauth_start_attack);
+menu_add_item(&deauth_submenu, "Stats", deauth_show_stats);
+menu_add_item(&deauth_submenu, "Stop", deauth_stop_attack);
+menu_add_item(&deauth_submenu, "Clear", deauth_clear_targets_handler);
+menu_add_item(&deauth_submenu, "Back", goto_wifi_menu);
     
     menu_init(&portal_submenu, "Evil Portal");
     menu_add_item(&portal_submenu, "Scan", deauth_scan_networks);

@@ -1,4 +1,4 @@
-// karma_menu.c - Karma Attack Menu for ESP32
+// karma_menu.c - Karma Attack Menu with Connection Tracking
 #include "include/menu.h"
 #include "include/modules/wifi_karma.h"
 #include "include/drivers/display.h"
@@ -83,6 +83,10 @@ static void karma_stop_collection(void) {
     snprintf(msg, sizeof(msg), "Probes: %d", probes);
     println(msg);
     
+    uint32_t total_conn = karma_get_total_connections();
+    snprintf(msg, sizeof(msg), "Connections: %lu", total_conn);
+    println(msg);
+    
     println("");
     println("Press to continue");
     display_show();
@@ -117,9 +121,19 @@ static void karma_show_stats(void) {
     snprintf(msg, sizeof(msg), "Total Probes: %d", probes);
     println(msg);
     
+    // Show connection stats
+    uint8_t connected = karma_get_connected_clients();
+    uint32_t total_conn = karma_get_total_connections();
+    
+    snprintf(msg, sizeof(msg), "Connected: %d", connected);
+    println(msg);
+    
+    snprintf(msg, sizeof(msg), "Total Conns: %lu", total_conn);
+    println(msg);
+    
     if (karma_get_current_ap()) {
         println("");
-        println("Fake AP Active:");
+        println("Current AP:");
         println(karma_get_current_ap());
     }
     
@@ -212,9 +226,15 @@ static void karma_view_targets(void) {
             
             set_cursor(4, y + 7);
             
-            char display_text[24];
-            snprintf(display_text, sizeof(display_text), "%.15s (%d)", 
-                    target->ssid, target->probe_count);
+            char display_text[32];
+            // Show connection count if any
+            if (target->total_connections > 0) {
+                snprintf(display_text, sizeof(display_text), "%.10s (%d/%d)", 
+                        target->ssid, target->probe_count, target->total_connections);
+            } else {
+                snprintf(display_text, sizeof(display_text), "%.13s (%d)", 
+                        target->ssid, target->probe_count);
+            }
             
             if (i == selected) {
                 // Inverted
@@ -339,8 +359,8 @@ static void karma_show_info(void) {
     println("devices search for");
     println("");
     println("PASSIVE: Safe");
-    println("ACTIVE: Creates");
-    println("  fake APs");
+    println("AUTO: Creates APs");
+    println("  with portal");
     println("");
     println("Press to continue");
     display_show();
@@ -424,7 +444,7 @@ static void karma_start_auto_mode(void) {
         println("→ Listen → AP");
         println("");
         println("Check serial log");
-        println("for activity");
+        println("for connections");
     } else {
         display_clear();
         set_cursor(2, 10);
@@ -530,15 +550,14 @@ static void karma_configure_auto(void) {
     goto_karma_main();
 }
 
-// Update menu_init to include new options:
 void karma_menu_init(void) {
     ESP_LOGI(TAG, "Initializing Karma menus");
     
     menu_init(&karma_main_menu, "Karma Attack");
     menu_add_item_icon(&karma_main_menu, "I", "Info", karma_show_info);
     menu_add_item_icon(&karma_main_menu, "L", "Start Passive", karma_start_passive_mode);
-    menu_add_item_icon(&karma_main_menu, "A", "Auto-Respond", karma_start_auto_mode);      // NEW
-    menu_add_item_icon(&karma_main_menu, "C", "Configure Auto", karma_configure_auto);    // NEW
+    menu_add_item_icon(&karma_main_menu, "A", "Auto-Respond", karma_start_auto_mode);
+    menu_add_item_icon(&karma_main_menu, "C", "Configure Auto", karma_configure_auto);
     menu_add_item_icon(&karma_main_menu, "X", "Stop", karma_stop_collection);
     menu_add_item_icon(&karma_main_menu, "?", "Statistics", karma_show_stats);
     menu_add_item_icon(&karma_main_menu, "T", "View Targets", karma_view_targets);

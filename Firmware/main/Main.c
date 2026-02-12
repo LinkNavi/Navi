@@ -29,6 +29,10 @@ static const char *TAG = "NAVI";
 #include "esp_system.h"
 #include "esp_sleep.h"
 #include "modules/wifi_karma.h"
+#include "pong.h"
+
+
+
 // Global BLE state variables
 uint8_t g_ble_connected = 0;
 uint16_t g_ble_conn_handle = 0;
@@ -46,6 +50,7 @@ Menu *current_menu = NULL;
 char status_text[32] = "";
 RotaryPCNT encoder;
 
+static Menu games_menu;
 static Menu main_menu;
 static Menu settings_menu;
 static Menu display_menu;
@@ -313,7 +318,59 @@ void sd_test_init(void) {
   delay(200);
   open_sd_menu();
 }
+static void open_games_menu(void) {
+    menu_set_status("Games");
+    menu_set_active(&games_menu);
+    menu_draw();
+}
 
+static void back_to_games_menu(void) {
+    menu_set_status("Games");
+    menu_set_active(&games_menu);
+    menu_draw();
+}
+
+static void play_pong(void) {
+    pong_play(&encoder);
+    back_to_games_menu();
+}
+
+static void play_ball_game(void) {
+    // This is your original game
+    display_clear();
+    int16_t x = WIDTH / 2, y = HEIGHT / 2;
+    int16_t score = 0;
+
+    ESP_LOGI(TAG, "Starting ball game");
+
+    while (1) {
+        int8_t dir = rotary_pcnt_read(&encoder);
+        if (dir > 0) {
+            y = (y - 2 + HEIGHT) % HEIGHT;
+            score++;
+        }
+        if (dir < 0) {
+            y = (y + 2) % HEIGHT;
+            score++;
+        }
+        if (rotary_pcnt_button_pressed(&encoder))
+            break;
+
+        display_clear();
+        fill_circle(x, y, 3, 1);
+        set_cursor(2, 8);
+        set_font(FONT_TOMTHUMB);
+        print("Score: ");
+        char score_str[10];
+        snprintf(score_str, sizeof(score_str), "%d", score);
+        print(score_str);
+        display_show();
+        delay(10);
+    }
+    delay(200);
+    ESP_LOGI(TAG, "Ball game ended, score=%d", score);
+    back_to_games_menu();
+}
 void sd_test_write(void) {
   if (!sd_initialized) {
     display_clear();
@@ -867,17 +924,17 @@ void app_main(void) {
   // Initialize pin config menu (ADD THIS)
   pin_config_menu_init();
 
-  menu_init(&main_menu, "Main Menu");
-  menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
-  menu_add_item_icon(&main_menu, "T", "WiFi Thingies", wifi_thingies_open);
-  menu_add_item_icon(&main_menu, "B", "Bluetooth", ble_menu_open);
-  menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
-  menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
-  menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);
-  menu_add_item_icon(&main_menu, "S", "Settings", open_settings);
-  menu_add_item_icon(&main_menu, "G", "Game", game_screen);
-  menu_add_item_icon(&main_menu, "P", "Power Menu", open_power_menu);
-  menu_add_item_icon(&main_menu, "?", "About", about_screen);
+menu_init(&main_menu, "Main Menu");
+menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
+menu_add_item_icon(&main_menu, "T", "WiFi Thingies", wifi_thingies_open);
+menu_add_item_icon(&main_menu, "B", "Bluetooth", ble_menu_open);
+menu_add_item_icon(&main_menu, "I", "IR Control", open_ir_menu);
+menu_add_item_icon(&main_menu, "F", "Files", open_file_browser);
+menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);
+menu_add_item_icon(&main_menu, "S", "Settings", open_settings);
+menu_add_item_icon(&main_menu, "G", "Games", open_games_menu);  // Changed from game_screen
+menu_add_item_icon(&main_menu, "P", "Power Menu", open_power_menu);
+menu_add_item_icon(&main_menu, "?", "About", about_screen);
 
   menu_init(&settings_menu, "Settings");
   menu_add_item_icon(&settings_menu, "V", "Display", open_display_settings);
@@ -889,6 +946,11 @@ void app_main(void) {
   menu_add_item_icon(&display_menu, "!", "Invert", toggle_invert);
   menu_add_item_icon(&display_menu, "+", "Contrast", adjust_contrast);
   menu_add_item_icon(&display_menu, "<", "Back", open_settings);
+
+menu_init(&games_menu, "Games");
+menu_add_item_icon(&games_menu, "P", "Pong", play_pong);
+menu_add_item_icon(&games_menu, "B", "Ball", play_ball_game);
+menu_add_item_icon(&games_menu, "<", "Back", back_to_main);
 
   menu_init(&sd_menu, "SD Card");
   menu_add_item_icon(&sd_menu, "I", "Initialize", sd_test_init);

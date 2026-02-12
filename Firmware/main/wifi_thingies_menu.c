@@ -12,7 +12,7 @@
 #include "esp_event.h"
 #include <stdio.h>
 
-extern RotaryPCNT rotary;
+extern RotaryPCNT encoder;
 
 static Menu wifi_menu;
 static Menu spam_submenu;
@@ -54,9 +54,16 @@ static void wifi_start_scan(void) {
     static uint8_t wifi_scan_init = 0;
     
     if (!wifi_scan_init) {
-        esp_netif_init();
-        esp_event_loop_create_default();
-        esp_netif_create_default_wifi_sta();
+        esp_err_t err;
+        err = esp_netif_init();
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+        
+        err = esp_event_loop_create_default();
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+        
+        if (!esp_netif_get_handle_from_ifkey("WIFI_STA_DEF")) {
+            esp_netif_create_default_wifi_sta();
+        }
         
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         esp_wifi_init(&cfg);
@@ -69,9 +76,7 @@ static void wifi_start_scan(void) {
     wifi_scan_config_t scan_config = {0};
     scan_config.show_hidden = true;
     esp_wifi_scan_start(&scan_config, false);
-}
-
-// ==================== NAVIGATION ====================
+}// ==================== NAVIGATION ====================
 
 static void goto_spam_menu(void) {
     menu_set_active(&spam_submenu);
@@ -164,11 +169,11 @@ static void spam_configure_power(void) {
         
         display_show();
         
-        int8_t rot = rotary_pcnt_read(&rotary);
+        int8_t rot = rotary_pcnt_read(&encoder);
         if (rot > 0 && power < 84) power += 4;
         if (rot < 0 && power > 8) power -= 4;
         
-        if (rotary_pcnt_button_pressed(&rotary)) {
+        if (rotary_pcnt_button_pressed(&encoder)) {
             spam_set_tx_power(power);
             vTaskDelay(pdMS_TO_TICKS(200));
             break;
@@ -191,11 +196,11 @@ static void spam_configure_interval(void) {
         draw_string(0, 24, buf, FONT_TOMTHUMB);
         display_show();
         
-        int8_t rot = rotary_pcnt_read(&rotary);
+        int8_t rot = rotary_pcnt_read(&encoder);
         if (rot > 0 && interval < 1000) interval += 10;
         if (rot < 0 && interval > 20) interval -= 10;
         
-        if (rotary_pcnt_button_pressed(&rotary)) {
+        if (rotary_pcnt_button_pressed(&encoder)) {
             spam_set_interval(interval);
             vTaskDelay(pdMS_TO_TICKS(200));
             break;
@@ -219,7 +224,7 @@ static void spam_toggle_random_macs(void) {
 
 static void spam_add_custom(void) {
     char ssid[33];
-    if (text_input_get(&rotary, "Custom SSID", ssid, sizeof(ssid), "")) {
+    if (text_input_get(&encoder, "Custom SSID", ssid, sizeof(ssid), "")) {
         if (spam_add_custom_ssid(ssid)) {
             display_clear();
             draw_string(0, 8, "Added!", FONT_TOMTHUMB);
@@ -311,11 +316,11 @@ static void deauth_select_target(void) {
         
         display_show();
         
-        int8_t rot = rotary_pcnt_read(&rotary);
+        int8_t rot = rotary_pcnt_read(&encoder);
         if (rot > 0) index = (index + 1) % scanned_count;
         if (rot < 0) index = (index == 0) ? scanned_count - 1 : index - 1;
         
-        if (rotary_pcnt_button_pressed(&rotary)) {
+        if (rotary_pcnt_button_pressed(&encoder)) {
             deauth_add_target(scanned_aps[index].bssid, scanned_aps[index].channel, scanned_aps[index].ssid);
             display_clear();
             draw_string(0, 8, "Target Added!", FONT_TOMTHUMB);
@@ -403,11 +408,11 @@ static void portal_select_network(void) {
         
         display_show();
         
-        int8_t rot = rotary_pcnt_read(&rotary);
+        int8_t rot = rotary_pcnt_read(&encoder);
         if (rot > 0) index = (index + 1) % scanned_count;
         if (rot < 0) index = (index == 0) ? scanned_count - 1 : index - 1;
         
-        if (rotary_pcnt_button_pressed(&rotary)) {
+        if (rotary_pcnt_button_pressed(&encoder)) {
             selected_ap_index = index;
             display_clear();
             draw_string(0, 8, "Selected!", FONT_TOMTHUMB);
@@ -508,4 +513,13 @@ void init_wifi_thingies_submenu(Menu *parent_menu) {
     menu_add_item(&browser_submenu, "Start", browser_start_handler);
     menu_add_item(&browser_submenu, "Stop", browser_stop_handler);
     menu_add_item(&browser_submenu, "Back", goto_wifi_menu);
+}
+
+void wifi_thingies_init(void) {
+    init_wifi_thingies_submenu(NULL);
+}
+
+void wifi_thingies_open(void) {
+    menu_set_active(&wifi_menu);
+    menu_draw();
 }

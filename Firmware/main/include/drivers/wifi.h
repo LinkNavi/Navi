@@ -51,12 +51,22 @@ static void wifi_event_handler(void* arg, esp_event_base_t event_base,
     }
 }
 
-// FIXED: Initialize WiFi subsystem (call once at startup)
 static inline void wifi_init_system(void) {
+    // Check if STA netif already exists (created by BLE or another module)
+    esp_netif_t *existing = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
+    if (existing) {
+        wifi_initialized = 1;
+        return;
+    }
     if (wifi_initialized) return;
     
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    esp_err_t err;
+    err = esp_netif_init();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+    
+    err = esp_event_loop_create_default();
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+    
     esp_netif_create_default_wifi_sta();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();

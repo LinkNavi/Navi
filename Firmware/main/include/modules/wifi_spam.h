@@ -279,8 +279,8 @@ static inline uint8_t spam_start(void) {
 
     static uint8_t wifi_init_done = 0;
     if (!wifi_init_done) {
-        ESP_ERROR_CHECK(esp_netif_init());
-        ESP_ERROR_CHECK(esp_event_loop_create_default());
+        { esp_err_t __e = esp_netif_init(); if (__e != ESP_OK && __e != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(__e); }
+        { esp_err_t __e = esp_event_loop_create_default(); if (__e != ESP_OK && __e != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(__e); }
 
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));

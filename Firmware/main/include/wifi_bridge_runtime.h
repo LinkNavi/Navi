@@ -67,12 +67,12 @@ static inline uint8_t bridge_start(void) {
     ESP_LOGI(BRIDGE_RUNTIME_TAG, "  Bridge AP: %s", cfg->bridge_ssid);
     
     // Initialize network interfaces
-    ESP_ERROR_CHECK(esp_netif_init());
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    { esp_err_t __e = esp_netif_init(); if (__e != ESP_OK && __e != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(__e); }
+    { esp_err_t __e = esp_event_loop_create_default(); if (__e != ESP_OK && __e != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(__e); }
     
     // Create AP and STA interfaces
     ap_netif = esp_netif_create_default_wifi_ap();
-    sta_netif = esp_netif_create_default_wifi_sta();
+    sta_netif = { static esp_netif_t *__sta = NULL; if (!__sta) __sta = esp_netif_create_default_wifi_sta(); }
     
     // Configure AP IP
     esp_netif_dhcps_stop(ap_netif);

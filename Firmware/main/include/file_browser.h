@@ -1,4 +1,4 @@
-// file_browser.h - Web-Based File Browser/Uploader for SPIFFS
+// file_browser.h - Web-Based File Browser/Uploader for SPIFFS (FIXED)
 #ifndef FILE_BROWSER_H
 #define FILE_BROWSER_H
 
@@ -23,13 +23,13 @@ static inline uint8_t file_browser_init_spiffs(void) {
     
     esp_err_t ret = esp_vfs_spiffs_register(&conf);
     if (ret != ESP_OK) {
+        if (ret == ESP_ERR_INVALID_STATE) return 1;
         ESP_LOGE(BROWSER_TAG, "SPIFFS mount failed");
         return 0;
     }
     
     mkdir("/spiffs/sites", 0755);
     mkdir("/spiffs/captures", 0755);
-    
     ESP_LOGI(BROWSER_TAG, "SPIFFS initialized");
     return 1;
 }
@@ -50,7 +50,7 @@ static esp_err_t browser_list_handler(httpd_req_t *req) {
     while ((entry = readdir(dir)) != NULL) {
         if (entry->d_name[0] == '.') continue;
         
-        // Truncate filename early to prevent buffer overflow
+        // Truncate filename to prevent buffer overflow
         char safe_name[32];
         strncpy(safe_name, entry->d_name, sizeof(safe_name) - 1);
         safe_name[sizeof(safe_name) - 1] = '\0';
@@ -61,9 +61,9 @@ static esp_err_t browser_list_handler(httpd_req_t *req) {
         struct stat st;
         if (stat(path, &st) != 0) continue;
         
-        char buf[128];
+        char buf[160];
         snprintf(buf, sizeof(buf), 
-            "%s{\"name\":\"%s\",\"size\":%ld,\"type\":\"%s\"}", 
+            "%s{\"name\":\"%.30s\",\"size\":%ld,\"type\":\"%s\"}", 
             first ? "" : ",",
             safe_name, 
             st.st_size,
@@ -80,15 +80,16 @@ static esp_err_t browser_list_handler(httpd_req_t *req) {
 }
 
 static esp_err_t browser_upload_handler(httpd_req_t *req) {
-    char filepath[256] = "/spiffs/";
+    char filepath[128] = "/spiffs/";
     size_t buf_len = httpd_req_get_url_query_len(req) + 1;
     
     if (buf_len > 1) {
         char *buf = malloc(buf_len);
         if (buf && httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            char param[128];
+            char param[64];
             if (httpd_query_key_value(buf, "path", param, sizeof(param)) == ESP_OK) {
-                strncat(filepath, param, sizeof(filepath) - strlen(filepath) - 1);
+                size_t remain = sizeof(filepath) - strlen(filepath) - 1;
+                strncat(filepath, param, remain);
             }
         }
         if (buf) free(buf);
@@ -115,15 +116,16 @@ static esp_err_t browser_upload_handler(httpd_req_t *req) {
 }
 
 static esp_err_t browser_download_handler(httpd_req_t *req) {
-    char filepath[256] = "/spiffs/";
+    char filepath[128] = "/spiffs/";
     size_t buf_len = httpd_req_get_url_query_len(req) + 1;
     
     if (buf_len > 1) {
         char *buf = malloc(buf_len);
         if (buf && httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            char param[128];
+            char param[64];
             if (httpd_query_key_value(buf, "path", param, sizeof(param)) == ESP_OK) {
-                strncat(filepath, param, sizeof(filepath) - strlen(filepath) - 1);
+                size_t remain = sizeof(filepath) - strlen(filepath) - 1;
+                strncat(filepath, param, remain);
             }
         }
         if (buf) free(buf);
@@ -147,15 +149,16 @@ static esp_err_t browser_download_handler(httpd_req_t *req) {
 }
 
 static esp_err_t browser_delete_handler(httpd_req_t *req) {
-    char filepath[256] = "/spiffs/";
+    char filepath[128] = "/spiffs/";
     size_t buf_len = httpd_req_get_url_query_len(req) + 1;
     
     if (buf_len > 1) {
         char *buf = malloc(buf_len);
         if (buf && httpd_req_get_url_query_str(req, buf, buf_len) == ESP_OK) {
-            char param[128];
+            char param[64];
             if (httpd_query_key_value(buf, "path", param, sizeof(param)) == ESP_OK) {
-                strncat(filepath, param, sizeof(filepath) - strlen(filepath) - 1);
+                size_t remain = sizeof(filepath) - strlen(filepath) - 1;
+                strncat(filepath, param, remain);
             }
         }
         if (buf) free(buf);
@@ -171,84 +174,88 @@ static esp_err_t browser_delete_handler(httpd_req_t *req) {
     return ESP_FAIL;
 }
 
+static esp_err_t browser_info_handler(httpd_req_t *req) {
+    size_t total = 0, used = 0;
+    esp_spiffs_info(NULL, &total, &used);
+    char buf[96];
+    snprintf(buf, sizeof(buf), "{\"total\":%d,\"used\":%d,\"free\":%d}",
+             (int)total, (int)used, (int)(total - used));
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_sendstr(req, buf);
+    return ESP_OK;
+}
+
 static esp_err_t browser_ui_handler(httpd_req_t *req) {
     const char *html = 
-        "<!DOCTYPE html><html lang='en'><head><meta charset='UTF-8'>"
+        "<!DOCTYPE html><html><head><meta charset='UTF-8'>"
         "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-        "<title>File Manager</title><style>"
+        "<title>Navi Files</title><style>"
         "*{margin:0;padding:0;box-sizing:border-box}"
-        "body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#0f0f0f;color:#e0e0e0;padding:20px}"
-        ".container{max-width:900px;margin:0 auto}"
-        "h1{font-size:28px;font-weight:600;margin-bottom:8px;color:#fff}"
-        ".subtitle{color:#888;font-size:14px;margin-bottom:24px}"
-        ".upload-area{background:#1a1a1a;border:2px dashed #333;border-radius:12px;padding:32px;margin-bottom:24px;text-align:center;transition:all .3s}"
-        ".upload-area:hover{border-color:#555;background:#222}"
-        ".upload-area.drag-over{border-color:#0066ff;background:#001a33}"
+        "body{font-family:-apple-system,sans-serif;background:#0f0f0f;color:#e0e0e0;padding:20px}"
+        ".c{max-width:900px;margin:0 auto}"
+        "h1{font-size:24px;margin-bottom:6px;color:#fff}"
+        ".sub{color:#888;font-size:13px;margin-bottom:20px}"
+        ".ib{display:flex;gap:16px;margin-bottom:14px;padding:10px;background:#1a1a1a;border-radius:8px;font-size:13px}"
+        ".ib span{color:#888}.ib b{color:#e0e0e0}"
+        ".up{background:#1a1a1a;border:2px dashed #333;border-radius:10px;padding:24px;margin-bottom:20px;text-align:center;cursor:pointer}"
+        ".up:hover{border-color:#555}.up.ov{border-color:#06f;background:#001a33}"
         "input[type=file]{display:none}"
-        ".upload-btn{background:#0066ff;color:#fff;padding:12px 24px;border:none;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:background .2s}"
-        ".upload-btn:hover{background:#0052cc}"
-        ".path-input{width:100%;padding:10px 16px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;font-size:14px;margin-top:12px}"
-        ".files{background:#1a1a1a;border-radius:12px;overflow:hidden}"
-        ".file-header{display:grid;grid-template-columns:40px 1fr 100px 140px;padding:12px 16px;background:#222;border-bottom:1px solid #333;font-size:12px;font-weight:600;color:#888;text-transform:uppercase}"
-        ".file-item{display:grid;grid-template-columns:40px 1fr 100px 140px;align-items:center;padding:12px 16px;border-bottom:1px solid #222;transition:background .2s}"
-        ".file-item:hover{background:#252525}"
-        ".file-item:last-child{border-bottom:none}"
-        ".file-icon{font-size:20px}"
-        ".file-name{color:#e0e0e0;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
-        ".file-size{color:#888;font-size:13px}"
-        ".file-actions{display:flex;gap:8px}"
-        ".btn{padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:500;cursor:pointer;transition:all .2s}"
-        ".btn-download{background:#1a472a;color:#4ade80}"
-        ".btn-download:hover{background:#22543d}"
-        ".btn-delete{background:#4a1a1a;color:#f87171}"
-        ".btn-delete:hover{background:#5a2828}"
-        ".empty{padding:48px;text-align:center;color:#666}"
-        ".progress{display:none;background:#0066ff;height:3px;position:fixed;top:0;left:0;right:0;animation:progress 1s ease-in-out infinite}"
-        "@keyframes progress{0%{width:0}50%{width:70%}100%{width:100%}}"
-        "</style></head><body><div class='container'>"
-        "<h1>📁 File Manager</h1><div class='subtitle'>SPIFFS Storage</div>"
-        "<div class='upload-area' id='uploadArea'>"
-        "<div style='font-size:48px;margin-bottom:12px'>📤</div>"
-        "<div style='font-size:16px;font-weight:500;margin-bottom:8px'>Drop files here or click to upload</div>"
-        "<div style='color:#888;font-size:13px;margin-bottom:16px'>Max 5MB per file</div>"
-        "<input type='file' id='file' multiple>"
-        "<button class='upload-btn' onclick='document.getElementById(\"file\").click()'>Choose Files</button>"
-        "<input type='text' class='path-input' id='path' placeholder='Path (e.g., sites/portal.html)'>"
-        "</div><div class='files'>"
-        "<div class='file-header'><div></div><div>Name</div><div>Size</div><div>Actions</div></div>"
-        "<div id='fileList'></div></div><div class='progress' id='progress'></div></div>"
+        ".bu{background:#06f;color:#fff;padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:14px}"
+        ".pi{width:100%;padding:8px 14px;background:#1a1a1a;border:1px solid #333;border-radius:8px;color:#e0e0e0;margin-top:10px}"
+        ".fl{background:#1a1a1a;border-radius:10px;overflow:hidden}"
+        ".fh{display:grid;grid-template-columns:30px 1fr 70px 100px;padding:10px 14px;background:#222;font-size:11px;color:#888}"
+        ".fi{display:grid;grid-template-columns:30px 1fr 70px 100px;align-items:center;padding:10px 14px;border-bottom:1px solid #222}"
+        ".fi:hover{background:#252525}"
+        ".fn{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}"
+        ".fs{color:#888;font-size:12px}"
+        ".fa{display:flex;gap:6px}"
+        ".b{padding:5px 10px;border:none;border-radius:5px;font-size:11px;cursor:pointer}"
+        ".bd{background:#1a472a;color:#4ade80}.bx{background:#4a1a1a;color:#f87171}"
+        ".em{padding:40px;text-align:center;color:#666}"
+        ".t{position:fixed;bottom:20px;right:20px;padding:10px 18px;border-radius:8px;color:#fff;font-size:13px;opacity:0;transition:opacity .3s}"
+        ".tok{background:#1a472a;opacity:1}.ter{background:#4a1a1a;opacity:1}"
+        "</style></head><body><div class='c'>"
+        "<h1>Navi File Manager</h1><div class='sub'>SPIFFS Storage</div>"
+        "<div class='ib' id='info'><span>Loading...</span></div>"
+        "<div class='up' id='ua' onclick=\"document.getElementById('f').click()\">"
+        "<div style='font-size:32px;margin-bottom:6px'>+</div>"
+        "<div style='margin-bottom:6px'>Drop files or click to upload</div>"
+        "<input type='file' id='f' multiple>"
+        "<button class='bu' onclick=\"event.stopPropagation();document.getElementById('f').click()\">Choose Files</button>"
+        "<input class='pi' id='p' placeholder='Custom path (optional)' onclick='event.stopPropagation()'>"
+        "</div><div class='fl'>"
+        "<div class='fh'><div></div><div>Name</div><div>Size</div><div></div></div>"
+        "<div id='l'></div></div><div class='t' id='t'></div></div>"
         "<script>"
-        "const uploadArea=document.getElementById('uploadArea');"
-        "const fileInput=document.getElementById('file');"
-        "const progress=document.getElementById('progress');"
-        "['dragenter','dragover','dragleave','drop'].forEach(e=>{"
-        "uploadArea.addEventListener(e,ev=>ev.preventDefault());});"
-        "uploadArea.addEventListener('dragenter',()=>uploadArea.classList.add('drag-over'));"
-        "uploadArea.addEventListener('dragleave',()=>uploadArea.classList.remove('drag-over'));"
-        "uploadArea.addEventListener('drop',e=>{"
-        "uploadArea.classList.remove('drag-over');handleFiles(e.dataTransfer.files);});"
-        "fileInput.addEventListener('change',()=>handleFiles(fileInput.files));"
-        "function handleFiles(files){Array.from(files).forEach(f=>{"
-        "const p=document.getElementById('path').value||f.name;"
-        "progress.style.display='block';"
+        "const ua=document.getElementById('ua'),fi=document.getElementById('f'),t=document.getElementById('t');"
+        "['dragenter','dragover','dragleave','drop'].forEach(e=>ua.addEventListener(e,v=>{v.preventDefault();v.stopPropagation()}));"
+        "ua.addEventListener('dragenter',()=>ua.classList.add('ov'));"
+        "ua.addEventListener('dragleave',()=>ua.classList.remove('ov'));"
+        "ua.addEventListener('drop',e=>{ua.classList.remove('ov');hf(e.dataTransfer.files)});"
+        "fi.addEventListener('change',()=>hf(fi.files));"
+        "function mg(s,ok){t.textContent=s;t.className='t '+(ok?'tok':'ter');setTimeout(()=>t.className='t',2500)}"
+        "function hf(fs){Array.from(fs).forEach(f=>{"
+        "const p=document.getElementById('p').value||f.name;"
         "fetch('/api/upload?path='+encodeURIComponent(p),{method:'POST',body:f})"
-        ".then(()=>{progress.style.display='none';load();})"
-        ".catch(()=>progress.style.display='none');});}"
-        "function load(){fetch('/api/list').then(r=>r.json()).then(d=>{"
-        "const list=document.getElementById('fileList');"
-        "if(!d.length){list.innerHTML='<div class=\"empty\">No files yet</div>';return;}"
-        "list.innerHTML=d.map(f=>"
-        "`<div class='file-item'>"
-        "<div class='file-icon'>${f.type==='dir'?'📁':'📄'}</div>"
-        "<div class='file-name'>${f.name}</div>"
-        "<div class='file-size'>${f.size<1024?f.size+'B':(f.size/1024).toFixed(1)+'KB'}</div>"
-        "<div class='file-actions'>"
-        "<button class='btn btn-download' onclick='download(\"${f.name}\")'>Download</button>"
-        "<button class='btn btn-delete' onclick='del(\"${f.name}\")'>Delete</button>"
-        "</div></div>`).join('');});}"
-        "function download(n){window.open('/api/download?path='+encodeURIComponent(n));}"
-        "function del(n){if(confirm('Delete '+n+'?'))fetch('/api/delete?path='+encodeURIComponent(n)).then(load);}"
-        "load();</script></body></html>";
+        ".then(r=>{if(r.ok){mg('Uploaded: '+f.name,1);ld()}else mg('Failed',0)})"
+        ".catch(()=>mg('Error',0))})}"
+        "function ld(){fetch('/api/list').then(r=>r.json()).then(d=>{"
+        "const l=document.getElementById('l');"
+        "if(!d.length){l.innerHTML='<div class=\"em\">No files</div>';return}"
+        "l.innerHTML=d.map(f=>"
+        "`<div class='fi'><div>${f.type==='dir'?'D':'F'}</div>"
+        "<div class='fn'>${f.name}</div>"
+        "<div class='fs'>${f.size<1024?f.size+'B':(f.size/1024).toFixed(1)+'K'}</div>"
+        "<div class='fa'><button class='b bd' onclick='dl(\"${f.name}\")'>Get</button>"
+        "<button class='b bx' onclick='de(\"${f.name}\")'>Del</button></div></div>`).join('')}).catch(()=>{});"
+        "fetch('/api/info').then(r=>r.json()).then(d=>{"
+        "document.getElementById('info').innerHTML="
+        "'<span>Total: <b>'+(d.total/1024)+'K</b></span>"
+        "<span>Used: <b>'+(d.used/1024)+'K</b></span>"
+        "<span>Free: <b>'+(d.free/1024)+'K</b></span>'}).catch(()=>{})}"
+        "function dl(n){window.open('/api/download?path='+encodeURIComponent(n))}"
+        "function de(n){if(confirm('Delete '+n+'?'))fetch('/api/delete?path='+encodeURIComponent(n)).then(r=>{if(r.ok){mg('Deleted',1);ld()}else mg('Failed',0)})}"
+        "ld()</script></body></html>";
     
     httpd_resp_send(req, html, strlen(html));
     return ESP_OK;
@@ -261,9 +268,10 @@ static inline uint8_t file_browser_start(void) {
     httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port = 8080;
     config.uri_match_fn = httpd_uri_match_wildcard;
+    config.max_uri_handlers = 8;
     
     if (httpd_start(&browser_server, &config) != ESP_OK) {
-        ESP_LOGE(BROWSER_TAG, "Failed to start server");
+        ESP_LOGE(BROWSER_TAG, "Server start failed");
         return 0;
     }
     
@@ -272,14 +280,16 @@ static inline uint8_t file_browser_start(void) {
     httpd_uri_t uri_upload = {.uri = "/api/upload", .method = HTTP_POST, .handler = browser_upload_handler};
     httpd_uri_t uri_download = {.uri = "/api/download", .method = HTTP_GET, .handler = browser_download_handler};
     httpd_uri_t uri_delete = {.uri = "/api/delete", .method = HTTP_GET, .handler = browser_delete_handler};
+    httpd_uri_t uri_info = {.uri = "/api/info", .method = HTTP_GET, .handler = browser_info_handler};
     
     httpd_register_uri_handler(browser_server, &uri_ui);
     httpd_register_uri_handler(browser_server, &uri_list);
     httpd_register_uri_handler(browser_server, &uri_upload);
     httpd_register_uri_handler(browser_server, &uri_download);
     httpd_register_uri_handler(browser_server, &uri_delete);
+    httpd_register_uri_handler(browser_server, &uri_info);
     
-    ESP_LOGI(BROWSER_TAG, "File browser started on port 8080");
+    ESP_LOGI(BROWSER_TAG, "File browser on :8080");
     return 1;
 }
 
@@ -287,7 +297,7 @@ static inline void file_browser_stop(void) {
     if (browser_server) {
         httpd_stop(browser_server);
         browser_server = NULL;
-        ESP_LOGI(BROWSER_TAG, "File browser stopped");
+        ESP_LOGI(BROWSER_TAG, "Stopped");
     }
 }
 

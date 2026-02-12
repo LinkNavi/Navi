@@ -869,9 +869,9 @@ void power_restart(void) {
 // Main
 
 void app_main(void) {
-  ESP_LOGI(TAG, "Starting Navi firmware v1.5 - Pin Config Added");
+  ESP_LOGI(TAG, "Starting Navi firmware v1.5");
   ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
-
+esp_log_level_set("wifi", ESP_LOG_ERROR);
   // Initialize pin config FIRST
   pin_config_init();
   PinConfig *pins = pin_config_get();

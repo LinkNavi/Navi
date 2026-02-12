@@ -9,10 +9,13 @@
 #include "include/drivers/rotary_pcnt.h"
 #include "include/rotary_text_input.h"
 #include "include/drivers/spiffs_storage.h"
+#include "arp_poison_menu.h"
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include <stdio.h>
-
+#include "null_ssid_spam.h"
+#include "evil_twin_menu.h"
+#include "dns_spoof_menu.h"
 extern void back_to_main(void);
 extern RotaryPCNT encoder;
 
@@ -637,16 +640,17 @@ static void portal_view_captures(void) {
 
 // ==================== MENU INIT ====================
 
-void init_wifi_thingies_submenu(Menu *parent_menu) {
 
+void init_wifi_thingies_submenu(Menu *parent_menu) {
     menu_init(&wifi_menu, "WiFi Thingies");
     menu_add_item(&wifi_menu, "Beacon Spam", goto_spam_menu);
     menu_add_item(&wifi_menu, "Deauth", goto_deauth_menu);
-
     menu_add_item(&wifi_menu, "Evil Portal", goto_portal_menu);
+    menu_add_item(&wifi_menu, "Evil Twin", evil_twin_menu_open);
+    menu_add_item(&wifi_menu, "ARP Poison", arp_poison_menu_open);
+    menu_add_item(&wifi_menu, "DNS Spoof", dns_spoof_menu_open);
+    menu_add_item(&wifi_menu, "Null SSID", null_ssid_menu_open);
     menu_add_item(&wifi_menu, "Karma Attack", karma_menu_open);
-
-
     menu_add_item(&wifi_menu, "File Browser", goto_browser_menu);
  
     menu_add_item(&wifi_menu, "Back", back_to_main);
@@ -688,8 +692,15 @@ menu_add_item(&deauth_submenu, "Back", goto_wifi_menu);
     menu_add_item(&browser_submenu, "Back", goto_wifi_menu);
 }
 
+
+
+
 void wifi_thingies_init(void) {
     init_wifi_thingies_submenu(NULL);
+evil_twin_menu_init();
+arp_poison_menu_init();
+dns_spoof_menu_init();
+null_ssid_menu_init();
 }
 
 void wifi_thingies_open(void) {

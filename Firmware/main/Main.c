@@ -38,7 +38,7 @@ ble_cmd_callback_t g_ble_cmd_callback = NULL;
 uint16_t g_ble_char_val_handle = 0;
 #include "driver/rmt_encoder.h"
 #include "driver/rmt_tx.h"
-
+static uint8_t display_sleeping = 0;
 rmt_channel_handle_t ir_channel = NULL;
 rmt_encoder_t *ir_nec_enc = NULL;
 
@@ -728,11 +728,87 @@ void game_screen(void) {
 }
 
 // Power Stuff
-void power_off(void) {esp_deep_sleep_start();}
+void power_off(void) {
+    PinConfig *pins = pin_config_get();
+    
+    // Show shutdown message
+    display_clear();
+    set_cursor(2, HEIGHT/2 - 10);
+    set_font(FONT_TOMTHUMB);
+    println("Powering Off...");
+    println("");
+    println("Press button");
+    println("to wake up");
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(1500));
+    
+    // Clear and turn off display
+    display_clear();
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    ESP_LOGI(TAG, "Entering deep sleep - wake on button press (GPIO %d)", pins->rotary_sw);
+    
+    // Configure wake-up on rotary button press (button is active low - pressed = 0)
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)pins->rotary_sw, 0);
+    
+    // Enter deep sleep (device will restart when button is pressed)
+    esp_deep_sleep_start();
+}
 
-void power_sleep(void) {}
+void power_sleep(void) {
+    PinConfig *pins = pin_config_get();
+    static uint8_t display_sleeping = 0;
+    
+    if (!display_sleeping) {
+        // Going to sleep
+        display_clear();
+        set_cursor(2, HEIGHT/2 - 10);
+        set_font(FONT_TOMTHUMB);
+        println("Display Sleep");
+        println("");
+        println("Turn or press");
+        println("to wake up");
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(1500));
+        
+        // Turn off display
+        display_clear();
+        display_show();
+        display_sleeping = 1;
+        
+        ESP_LOGI(TAG, "Display sleeping - encoder activity will wake");
+    } else {
+        // Waking up from sleep
+        display_sleeping = 0;
+        ESP_LOGI(TAG, "Waking from display sleep");
+        
+        // Show wake message briefly
+        display_clear();
+        set_cursor(2, HEIGHT/2);
+        set_font(FONT_TOMTHUMB);
+        print("Waking up...");
+        display_show();
+        vTaskDelay(pdMS_TO_TICKS(500));
+        
+        // Return to main menu
+        back_to_main();
+    }
+}
 
-void power_restart(void) { esp_restart();}
+void power_restart(void) { 
+    // Show restart message
+    display_clear();
+    set_cursor(2, HEIGHT/2);
+    set_font(FONT_TOMTHUMB);
+    println("Restarting...");
+    println("");
+    println("Please wait");
+    display_show();
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    
+    esp_restart();
+}
 // Main
 
 void app_main(void) {
@@ -839,24 +915,40 @@ void app_main(void) {
   ESP_LOGI(TAG, "BLE advertising as 'Navi-Esp32'");
   ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
 
-  while (1) {
+ while (1) {
     int8_t dir = rotary_pcnt_read(&encoder);
 
+    // Check if we should wake from display sleep
+    if (display_sleeping && (dir != 0 || rotary_pcnt_button_pressed(&encoder))) {
+        // Wake from sleep
+        display_sleeping = 0;
+        back_to_main();
+        delay(300);  // Debounce
+        continue;
+    }
+
+    // Skip normal menu processing if display is sleeping
+    if (display_sleeping) {
+        delay(50);
+        continue;
+    }
+
+    // Normal menu operation
     if (dir > 0) {
-      menu_next();
-      menu_draw();
-      delay(50);
+        menu_next();
+        menu_draw();
+        delay(50);
     } else if (dir < 0) {
-      menu_prev();
-      menu_draw();
-      delay(50);
+        menu_prev();
+        menu_draw();
+        delay(50);
     }
 
     if (rotary_pcnt_button_pressed(&encoder)) {
-      menu_select();
-      delay(200);
+        menu_select();
+        delay(200);
     }
 
     delay(5);
-  }
+}
 }

@@ -5,6 +5,7 @@
 #include "include/modules/wifi_portal.h"
 #include "include/modules/file_browser.h"
 #include "include/drivers/display.h"
+#include "modules/wifi_karma.h"
 #include "include/drivers/rotary_pcnt.h"
 #include "include/rotary_text_input.h"
 #include "include/drivers/spiffs_storage.h"
@@ -478,7 +479,10 @@ void init_wifi_thingies_submenu(Menu *parent_menu) {
     menu_add_item(&wifi_menu, "Beacon Spam", goto_spam_menu);
     menu_add_item(&wifi_menu, "Deauth", goto_deauth_menu);
     menu_add_item(&wifi_menu, "Evil Portal", goto_portal_menu);
+
+	karma_menu_init();
     menu_add_item(&wifi_menu, "File Browser", goto_browser_menu);
+ 
     menu_add_item(&wifi_menu, "Back", NULL);
     
     menu_init(&spam_submenu, "Beacon Spam");

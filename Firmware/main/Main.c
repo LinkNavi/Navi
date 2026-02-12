@@ -17,15 +17,17 @@
 #include "ir_system.h"
 #include "menu.h"
 #include "nvs_flash.h"
-#include "rotary_debug.h"
+#include "pin_config.h"
 #include "pin_config_menu.h"
+#include "rotary_debug.h"
 #include "wifi_menu.h"
 #include "wifi_thingies_menu.h"
 #include <stdio.h>
-#include "pin_config.h"
 #include <string.h>
 static const char *TAG = "NAVI";
 #include "drivers/ble.h"
+#include "esp_system.h"
+#include "esp_sleep.h"
 
 // Global BLE state variables
 uint8_t g_ble_connected = 0;
@@ -51,7 +53,7 @@ static Menu sd_menu;
 static Menu ir_menu;
 static Menu ir_file_menu;
 static Menu files_menu;
-
+static Menu power_menu;
 uint8_t sd_initialized = 0;
 uint8_t ir_folder_scanned = 0;
 uint8_t current_ir_file_index = 0;
@@ -85,6 +87,12 @@ void back_to_main(void) {
 void open_settings(void) {
   menu_set_status("Config");
   menu_set_active(&settings_menu);
+  menu_draw();
+}
+
+void open_power_menu(void) {
+  menu_set_status("Power");
+  menu_set_active(&power_menu);
   menu_draw();
 }
 
@@ -719,18 +727,26 @@ void game_screen(void) {
   back_to_main();
 }
 
+// Power Stuff
+void power_off(void) {esp_deep_sleep_start();}
+
+void power_sleep(void) {}
+
+void power_restart(void) { esp_restart();}
+// Main
+
 void app_main(void) {
   ESP_LOGI(TAG, "Starting Navi firmware v1.5 - Pin Config Added");
   ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
-  
+
   // Initialize pin config FIRST
   pin_config_init();
   PinConfig *pins = pin_config_get();
-  
+
   // Use dynamic pins
-  init_i2c(pins->i2c_sda, pins->i2c_scl);  // Changed
+  init_i2c(pins->i2c_sda, pins->i2c_scl); // Changed
   display_init();
-  
+
   display_clear();
   set_cursor(10, 20);
   set_font(FONT_FREEMONO_9PT);
@@ -759,17 +775,18 @@ void app_main(void) {
   wifi_init_system();
   ESP_LOGI(TAG, "WiFi initialized");
 
-  ir_init(pins->ir_pin);  // Changed
-  ESP_LOGI(TAG, "IR initialized on pin %d", pins->ir_pin);  // Changed
+  ir_init(pins->ir_pin);                                   // Changed
+  ESP_LOGI(TAG, "IR initialized on pin %d", pins->ir_pin); // Changed
 
-  rotary_pcnt_init(&encoder, pins->rotary_clk, pins->rotary_dt, pins->rotary_sw);  // Changed
+  rotary_pcnt_init(&encoder, pins->rotary_clk, pins->rotary_dt,
+                   pins->rotary_sw); // Changed
   ESP_LOGI(TAG, "RotaryPCNT encoder initialized on CLK=%d, DT=%d, SW=%d",
-           pins->rotary_clk, pins->rotary_dt, pins->rotary_sw);  // Changed
+           pins->rotary_clk, pins->rotary_dt, pins->rotary_sw); // Changed
 
   wifi_menu_init();
   wifi_thingies_init();
   ble_menu_init();
-  
+
   // Initialize pin config menu (ADD THIS)
   pin_config_menu_init();
 
@@ -782,13 +799,16 @@ void app_main(void) {
   menu_add_item_icon(&main_menu, "D", "SD Card", open_sd_menu);
   menu_add_item_icon(&main_menu, "S", "Settings", open_settings);
   menu_add_item_icon(&main_menu, "G", "Game", game_screen);
+  menu_add_item_icon(&main_menu, "P", "Power Menu", open_power_menu);
   menu_add_item_icon(&main_menu, "?", "About", about_screen);
 
   menu_init(&settings_menu, "Settings");
   menu_add_item_icon(&settings_menu, "V", "Display", open_display_settings);
-  menu_add_item_icon(&settings_menu, "P", "Pin Config", pin_config_menu_open);  // ADD THIS
+  menu_add_item_icon(&settings_menu, "P", "Pin Config",
+                     pin_config_menu_open); // ADD THIS
   menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
-  menu_add_item_icon(&settings_menu, "<", "Back", back_to_main);  menu_init(&display_menu, "Display");
+  menu_add_item_icon(&settings_menu, "<", "Back", back_to_main);
+  menu_init(&display_menu, "Display");
   menu_add_item_icon(&display_menu, "!", "Invert", toggle_invert);
   menu_add_item_icon(&display_menu, "+", "Contrast", adjust_contrast);
   menu_add_item_icon(&display_menu, "<", "Back", open_settings);
@@ -805,6 +825,11 @@ void app_main(void) {
   menu_add_item_icon(&ir_menu, "B", "Browse", ir_browse_files);
   menu_add_item_icon(&ir_menu, "T", "Test Signal", ir_test_signal);
   menu_add_item_icon(&ir_menu, "<", "Back", back_to_main);
+
+  menu_init(&power_menu, "Power Menu");
+  menu_add_item_icon(&power_menu, "P", "Power Off", power_off);
+  menu_add_item_icon(&power_menu, "S", "Sleep", power_sleep);
+  menu_add_item_icon(&power_menu, "R", "Restart", power_restart);
 
   menu_set_status("Ready");
   menu_set_active(&main_menu);

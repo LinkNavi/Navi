@@ -20,10 +20,133 @@
 // Global state
 static sdmmc_card_t *sd_card = NULL;
 static uint8_t sd_mounted = 0;
-static uint8_t sd_pins_mosi = 1;
-static uint8_t sd_pins_miso = 2;
-static uint8_t sd_pins_clk = 42;
-static uint8_t sd_pins_cs = 41;
+static uint8_t sd_pins_mosi = 11;
+static uint8_t sd_pins_miso = 13;
+static uint8_t sd_pins_clk = 12;
+static uint8_t sd_pins_cs = 10;
+
+// Raw SPI test function - tests basic card communication
+static inline void sd_test_raw_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t cs) {
+    ESP_LOGI("SD", "=== RAW SD CARD INIT TEST ===");
+    
+    // Configure pins
+    gpio_config_t io_conf = {
+        .pin_bit_mask = (1ULL << miso),
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+    };
+    gpio_config(&io_conf);
+    
+    io_conf.pin_bit_mask = (1ULL << cs);
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pull_up_en = GPIO_PULLUP_DISABLE;
+    gpio_config(&io_conf);
+    
+    // CS high (idle)
+    gpio_set_level((gpio_num_t)cs, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    
+    // Initialize SPI bus
+    spi_bus_config_t bus_cfg = {
+        .mosi_io_num = mosi,
+        .miso_io_num = miso,
+        .sclk_io_num = clk,
+        .quadwp_io_num = -1,
+        .quadhd_io_num = -1,
+        .max_transfer_sz = 4096,
+    };
+    
+    esp_err_t ret = spi_bus_initialize(SPI2_HOST, &bus_cfg, SPI_DMA_CH_AUTO);
+    if (ret != ESP_OK && ret != ESP_ERR_INVALID_STATE) {
+        ESP_LOGE("SD", "SPI bus init failed: %s", esp_err_to_name(ret));
+        return;
+    }
+    
+    // Add SPI device
+    spi_device_interface_config_t dev_cfg = {
+        .clock_speed_hz = 400000,  // 400kHz
+        .mode = 0,                 // SPI mode 0
+        .spics_io_num = -1,        // Manual CS control
+        .queue_size = 1,
+        .flags = SPI_DEVICE_HALFDUPLEX,
+    };
+    
+    spi_device_handle_t spi;
+    ret = spi_bus_add_device(SPI2_HOST, &dev_cfg, &spi);
+    if (ret != ESP_OK) {
+        ESP_LOGE("SD", "Failed to add SPI device: %s", esp_err_to_name(ret));
+        spi_bus_free(SPI2_HOST);
+        return;
+    }
+    
+    // Send 80 clock pulses with CS high (card power-up sequence)
+    ESP_LOGI("SD", "Sending power-up sequence (80 clocks)...");
+    uint8_t dummy[10] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+    
+    spi_transaction_t t = {
+        .length = 80,
+        .tx_buffer = dummy,
+    };
+    spi_device_transmit(spi, &t);
+    vTaskDelay(pdMS_TO_TICKS(10));
+    
+    // Send CMD0 (GO_IDLE_STATE) - should return 0x01
+    ESP_LOGI("SD", "Sending CMD0 (GO_IDLE_STATE)...");
+    gpio_set_level((gpio_num_t)cs, 0);  // CS low
+    vTaskDelay(pdMS_TO_TICKS(1));
+    
+    uint8_t cmd0[] = {0x40, 0x00, 0x00, 0x00, 0x00, 0x95};  // CMD0 + CRC
+    t.length = 48;
+    t.tx_buffer = cmd0;
+    spi_device_transmit(spi, &t);
+    
+    // Read response (up to 8 bytes)
+    uint8_t response[16];
+    memset(response, 0xFF, sizeof(response));
+    
+    t.length = 80;
+    t.rxlength = 80;
+    t.tx_buffer = dummy;
+    t.rx_buffer = response;
+    spi_device_transmit(spi, &t);
+    
+    gpio_set_level((gpio_num_t)cs, 1);  // CS high
+    
+    ESP_LOGI("SD", "CMD0 Response: %02X %02X %02X %02X %02X %02X %02X %02X %02X %02X",
+             response[0], response[1], response[2], response[3], response[4],
+             response[5], response[6], response[7], response[8], response[9]);
+    
+    // Check for valid response (0x01 = idle state)
+    uint8_t found_response = 0;
+    for (int i = 0; i < 10; i++) {
+        if (response[i] == 0x01) {
+            ESP_LOGI("SD", "✓ CARD RESPONDED! Found 0x01 at byte %d", i);
+            found_response = 1;
+            break;
+        }
+    }
+    
+    if (!found_response) {
+        ESP_LOGE("SD", "✗ NO VALID RESPONSE");
+        ESP_LOGE("SD", "Troubleshooting:");
+        ESP_LOGE("SD", "  1. Card not inserted or seated properly");
+        ESP_LOGE("SD", "  2. Card not receiving power (measure 3.3V at VCC)");
+        ESP_LOGE("SD", "  3. Wrong pin assignments");
+        ESP_LOGE("SD", "  4. Defective card - try another one");
+    } else {
+        ESP_LOGI("SD", "SD card is responding to basic SPI commands!");
+        ESP_LOGI("SD", "If mount still fails, issue is likely:");
+        ESP_LOGI("SD", "  - Insufficient power during card initialization");
+        ESP_LOGI("SD", "  - Card needs to be formatted as FAT32");
+        ESP_LOGI("SD", "  - Signal integrity (add pullup resistors)");
+    }
+    
+    // Cleanup
+    spi_bus_remove_device(spi);
+    spi_bus_free(SPI2_HOST);
+    vTaskDelay(pdMS_TO_TICKS(100));
+}
 
 // Hardware diagnostic function - NOW USES ACTUAL PINS
 static inline void sd_test_hardware(void) {
@@ -154,6 +277,11 @@ static inline void sd_test_hardware(void) {
         ESP_LOGI("SD", "  4. Reduce SPI speed (already at 400kHz)");
     }
     
+    ESP_LOGI("SD", "");
+    ESP_LOGI("SD", "=== Starting SPI Communication Test ===");
+    sd_test_raw_init(sd_pins_mosi, sd_pins_miso, sd_pins_clk, sd_pins_cs);
+    
+    ESP_LOGI("SD", "");
     ESP_LOGI("SD", "=== Pin Configuration Summary ===");
     ESP_LOGI("SD", "Update your code if these are wrong:");
     ESP_LOGI("SD", "#define SD_MOSI %d", sd_pins_mosi);
@@ -233,8 +361,10 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
     uint32_t speeds[] = {400, 200, 100};  // kHz
     
     for (uint8_t i = 0; i < 3; i++) {
+        // CRITICAL: Use SDSPI_HOST_DEFAULT() which forces SPI mode
         sdmmc_host_t host = SDSPI_HOST_DEFAULT();
         host.max_freq_khz = speeds[i];
+        host.flags = 0;  // Clear all flags - disable SDIO mode
         
         ESP_LOGI("SD", "Attempt %d: Mounting at %lu kHz...", i + 1, speeds[i]);
         
@@ -247,8 +377,11 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
         
         ESP_LOGW("SD", "Failed: %s", esp_err_to_name(ret));
         
-        // Decode error
-        if (ret == ESP_ERR_TIMEOUT) {
+        // Better error decoding
+        if (ret == ESP_ERR_NO_MEM) {
+            ESP_LOGE("SD", "  -> Out of memory OR card init failed");
+            ESP_LOGE("SD", "  -> Check: 1) Card inserted 2) Power 3) Wiring");
+        } else if (ret == ESP_ERR_TIMEOUT) {
             ESP_LOGE("SD", "  -> Timeout: Card not responding (check wiring, power, card insertion)");
         } else if (ret == ESP_ERR_INVALID_RESPONSE) {
             ESP_LOGE("SD", "  -> Invalid response: Card communication failed (try slower speed)");
@@ -270,10 +403,12 @@ static inline uint8_t sd_init(uint8_t mosi, uint8_t miso, uint8_t clk, uint8_t c
     ESP_LOGE("SD", "  1. Run HW Test from SD menu");
     ESP_LOGE("SD", "  2. Verify wiring: CS=%d MOSI=%d MISO=%d CLK=%d", cs, mosi, miso, clk);
     ESP_LOGE("SD", "  3. Check SD card is inserted properly");
-    ESP_LOGE("SD", "  4. Verify 3.3V power to SD card");
-    ESP_LOGE("SD", "  5. Format card as FAT32 on computer");
-    ESP_LOGE("SD", "  6. Try different SD card (1-32GB recommended)");
-    ESP_LOGE("SD", "  7. Add 10K pullup resistors to all SPI lines");
+    ESP_LOGE("SD", "  4. CRITICAL: Verify 3.3V power to SD card (measure with multimeter)");
+    ESP_LOGE("SD", "  5. Try powering SD directly from TP4056 OUT+ (not through ESP32 3V3 pin)");
+    ESP_LOGE("SD", "  6. Add 100uF capacitor across SD VCC/GND for power stability");
+    ESP_LOGE("SD", "  7. Format card as FAT32 on computer");
+    ESP_LOGE("SD", "  8. Try different SD card (1-32GB recommended)");
+    ESP_LOGE("SD", "  9. Add 10K pullup resistors to all SPI lines");
     
     return 0;
 
@@ -324,6 +459,7 @@ static inline uint8_t sd_format_fat16(void) {
     
     sdmmc_host_t host = SDSPI_HOST_DEFAULT();
     host.max_freq_khz = 20000;
+    host.flags = 0;  // Disable SDIO
     
     esp_err_t ret = esp_vfs_fat_sdspi_mount("/sdcard", &host, &slot_config, &mount_config, &sd_card);
     

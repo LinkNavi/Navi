@@ -13,15 +13,17 @@
 #include "file_browser_local.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "include/pin_config.h"
 #include "ir_system.h"
 #include "menu.h"
 #include "nvs_flash.h"
 #include "rotary_debug.h"
+#include "pin_config_menu.h"
 #include "wifi_menu.h"
 #include "wifi_thingies_menu.h"
 #include <stdio.h>
+#include "pin_config.h"
 #include <string.h>
-
 static const char *TAG = "NAVI";
 #include "drivers/ble.h"
 
@@ -37,17 +39,6 @@ uint16_t g_ble_char_val_handle = 0;
 
 rmt_channel_handle_t ir_channel = NULL;
 rmt_encoder_t *ir_nec_enc = NULL;
-
-#define I2C_SDA 13
-#define I2C_SCL 12
-#define ROTARY_CLK 5
-#define ROTARY_DT 6
-#define ROTARY_SW 7
-#define SD_MOSI 1
-#define SD_MISO 2
-#define SD_CLK 42
-#define SD_CS 41
-#define IR_PIN 4
 
 Menu *current_menu = NULL;
 char status_text[32] = "";
@@ -71,18 +62,18 @@ static inline uint32_t millis(void) {
   return xTaskGetTickCount() * portTICK_PERIOD_MS;
 }
 
-void init_i2c(void) {
+void init_i2c(uint8_t sda, uint8_t scl) {
   i2c_config_t conf = {};
   conf.mode = I2C_MODE_MASTER;
-  conf.sda_io_num = (gpio_num_t)I2C_SDA;
-  conf.scl_io_num = (gpio_num_t)I2C_SCL;
+  conf.sda_io_num = (gpio_num_t)sda;
+  conf.scl_io_num = (gpio_num_t)scl;
   conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
   conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
   conf.master.clk_speed = 400000;
   i2c_param_config(I2C_NUM_0, &conf);
   i2c_driver_install(I2C_NUM_0, conf.mode, 0, 0, 0);
 
-  ESP_LOGI(TAG, "I2C initialized on SDA=%d, SCL=%d", I2C_SDA, I2C_SCL);
+  ESP_LOGI(TAG, "I2C initialized on SDA=%d, SCL=%d", sda, scl);
 }
 
 void back_to_main(void) {
@@ -155,6 +146,7 @@ void sd_hardware_test(void) {
 }
 
 void sd_test_init(void) {
+  PinConfig *pins = pin_config_get();
   if (sd_initialized) {
     display_clear();
     set_cursor(2, 10);
@@ -208,9 +200,9 @@ void sd_test_init(void) {
   display_show();
 
   ESP_LOGI(TAG, "Initializing SD card on CS=%d, MOSI=%d, MISO=%d, CLK=%d",
-           SD_CS, SD_MOSI, SD_MISO, SD_CLK);
+           pins->sd_cs, pins->sd_mosi, pins->sd_miso, pins->sd_clk);
 
-  if (sd_init(SD_MOSI, SD_MISO, SD_CLK, SD_CS)) {
+  if (sd_init(pins->sd_mosi, pins->sd_miso, pins->sd_clk, pins->sd_cs)) {
     sd_initialized = 1;
     display_clear();
     set_cursor(2, 10);
@@ -295,8 +287,11 @@ void sd_test_init(void) {
     set_cursor(2, 10);
     println("SD Init FAILED!");
     println("Check wiring:");
-    println("MOSI=1 MISO=2");
-    println("CLK=42 CS=41");
+    char msg[32];
+    snprintf(msg, sizeof(msg), "MOSI=%d MISO=%d", pins->sd_mosi, pins->sd_miso);
+    println(msg);
+    snprintf(msg, sizeof(msg), "CLK=%d CS=%d", pins->sd_clk, pins->sd_cs);
+    println(msg);
     println("");
     println("Press to continue");
     display_show();
@@ -453,6 +448,7 @@ void back_to_ir_menu(void) {
 }
 
 void open_file_browser(void) {
+  PinConfig *pins = pin_config_get();
   if (!sd_initialized) {
     display_clear();
     set_cursor(2, 10);
@@ -541,7 +537,7 @@ void open_file_browser(void) {
     }
 
     static uint32_t hold_start = 0;
-    if (gpio_get_level((gpio_num_t)ROTARY_SW) == 0) {
+    if (gpio_get_level((gpio_num_t)pins->rotary_sw) == 0) {
       if (hold_start == 0)
         hold_start = millis();
       if (millis() - hold_start > 1000) {
@@ -724,13 +720,18 @@ void game_screen(void) {
 }
 
 void app_main(void) {
-  ESP_LOGI(TAG, "Starting Navi firmware v1.4 - BLE Support Added");
+  ESP_LOGI(TAG, "Starting Navi firmware v1.5 - Pin Config Added");
   ESP_LOGI(TAG, "Free heap: %lu bytes", esp_get_free_heap_size());
-
-  init_i2c();
+  
+  // Initialize pin config FIRST
+  pin_config_init();
+  PinConfig *pins = pin_config_get();
+  
+  // Use dynamic pins
+  init_i2c(pins->i2c_sda, pins->i2c_scl);  // Changed
   display_init();
+  
   display_clear();
-
   set_cursor(10, 20);
   set_font(FONT_FREEMONO_9PT);
   print("Navi.");
@@ -750,27 +751,27 @@ void app_main(void) {
   ESP_ERROR_CHECK(ret);
 
   // Initialize BLE
-
   ESP_LOGI(TAG, "Initializing BLE...");
-
   ble_init(ble_process_command);
-
   ESP_LOGI(TAG, "BLE initialized as 'Navi-Esp32'");
 
-// Init WiFi
-	wifi_init_system();
-
+  // Init WiFi
+  wifi_init_system();
   ESP_LOGI(TAG, "WiFi initialized");
-  ir_init(IR_PIN);
-  ESP_LOGI(TAG, "IR initialized on pin %d", IR_PIN);
 
-  rotary_pcnt_init(&encoder, ROTARY_CLK, ROTARY_DT, ROTARY_SW);
+  ir_init(pins->ir_pin);  // Changed
+  ESP_LOGI(TAG, "IR initialized on pin %d", pins->ir_pin);  // Changed
+
+  rotary_pcnt_init(&encoder, pins->rotary_clk, pins->rotary_dt, pins->rotary_sw);  // Changed
   ESP_LOGI(TAG, "RotaryPCNT encoder initialized on CLK=%d, DT=%d, SW=%d",
-           ROTARY_CLK, ROTARY_DT, ROTARY_SW);
+           pins->rotary_clk, pins->rotary_dt, pins->rotary_sw);  // Changed
 
   wifi_menu_init();
   wifi_thingies_init();
   ble_menu_init();
+  
+  // Initialize pin config menu (ADD THIS)
+  pin_config_menu_init();
 
   menu_init(&main_menu, "Main Menu");
   menu_add_item_icon(&main_menu, "W", "WiFi", wifi_menu_open);
@@ -785,10 +786,9 @@ void app_main(void) {
 
   menu_init(&settings_menu, "Settings");
   menu_add_item_icon(&settings_menu, "V", "Display", open_display_settings);
+  menu_add_item_icon(&settings_menu, "P", "Pin Config", pin_config_menu_open);  // ADD THIS
   menu_add_item_icon(&settings_menu, "R", "Rotary Test", rotary_debug_screen);
-  menu_add_item_icon(&settings_menu, "<", "Back", back_to_main);
-
-  menu_init(&display_menu, "Display");
+  menu_add_item_icon(&settings_menu, "<", "Back", back_to_main);  menu_init(&display_menu, "Display");
   menu_add_item_icon(&display_menu, "!", "Invert", toggle_invert);
   menu_add_item_icon(&display_menu, "+", "Contrast", adjust_contrast);
   menu_add_item_icon(&display_menu, "<", "Back", open_settings);

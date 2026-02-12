@@ -28,7 +28,7 @@ static const char *TAG = "NAVI";
 #include "drivers/ble.h"
 #include "esp_system.h"
 #include "esp_sleep.h"
-
+#include "modules/wifi_karma.h"
 // Global BLE state variables
 uint8_t g_ble_connected = 0;
 uint16_t g_ble_conn_handle = 0;
@@ -863,6 +863,7 @@ void app_main(void) {
   wifi_thingies_init();
   ble_menu_init();
 
+	karma_menu_init();
   // Initialize pin config menu (ADD THIS)
   pin_config_menu_init();
 

@@ -13,6 +13,7 @@
 #include "esp_event.h"
 #include <stdio.h>
 
+extern void back_to_main(void);
 extern RotaryPCNT encoder;
 
 static Menu wifi_menu;
@@ -475,15 +476,18 @@ static void portal_view_captures(void) {
 // ==================== MENU INIT ====================
 
 void init_wifi_thingies_submenu(Menu *parent_menu) {
+
     menu_init(&wifi_menu, "WiFi Thingies");
     menu_add_item(&wifi_menu, "Beacon Spam", goto_spam_menu);
     menu_add_item(&wifi_menu, "Deauth", goto_deauth_menu);
-    menu_add_item(&wifi_menu, "Evil Portal", goto_portal_menu);
 
-	karma_menu_init();
+    menu_add_item(&wifi_menu, "Evil Portal", goto_portal_menu);
+    menu_add_item(&wifi_menu, "Karma Attack", karma_menu_open);
+
+
     menu_add_item(&wifi_menu, "File Browser", goto_browser_menu);
  
-    menu_add_item(&wifi_menu, "Back", NULL);
+    menu_add_item(&wifi_menu, "Back", back_to_main);
     
     menu_init(&spam_submenu, "Beacon Spam");
     menu_add_item(&spam_submenu, "Status", spam_show_status);

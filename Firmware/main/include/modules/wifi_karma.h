@@ -11,11 +11,12 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
+#include "drivers/ap.h"
 #define MAX_KARMA_SSIDS 50
 #define KARMA_SSID_LEN 32
 
-static const char *KARMA_TAG = "WiFi_Karma";
+#include "esp_mac.h"
+
 static uint8_t karma_running = 0;
 static TaskHandle_t karma_task_handle = NULL;
 
@@ -152,33 +153,7 @@ static inline uint8_t karma_create_fake_ap_internal(const char *ssid) {
     
     // Stop promiscuous mode
     esp_wifi_set_promiscuous(false);
-    vTaskDelay(pdMS_TO_TICKS(100));
-    
-    // Register event handler if not already done
-    static uint8_t handler_registered = 0;
-    if (!handler_registered) {
-        esp_event_handler_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &karma_event_handler, NULL);
-        handler_registered = 1;
-    }
-    
-    wifi_config_t ap_config = {
-        .ap = {
-            .ssid_len = strlen(ssid),
-            .channel = 6,
-            .authmode = WIFI_AUTH_OPEN,
-            .max_connection = 4,
-            .beacon_interval = 100,
-        },
-    };
-    
-    strncpy((char *)ap_config.ap.ssid, ssid, 32);
-    strncpy(karma_current_ssid, ssid, KARMA_SSID_LEN);
-    
-    esp_wifi_set_mode(WIFI_MODE_AP);
-    esp_wifi_set_config(WIFI_IF_AP, &ap_config);
-    esp_wifi_start();
-    
-    karma_active_ap = 1;
+ captive_portal_start(ssid);
     ESP_LOGI(KARMA_TAG, "✅ Fake AP broadcasting: %s", ssid);
     
     return 1;
@@ -287,7 +262,7 @@ static inline uint8_t karma_start_auto_respond(void) {
         if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err);
         
         esp_netif_create_default_wifi_ap();
-        esp_netif_create_default_wifi_sta();
+
         
         wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
         ESP_ERROR_CHECK(esp_wifi_init(&cfg));
@@ -383,7 +358,7 @@ static inline void karma_get_stats(uint16_t *unique_ssids, uint16_t *total_probe
         *total_probes += karma_targets[i].probe_count;
     }
 }
-
+void karma_menu_open(void);
 static inline KarmaConfig* karma_get_config(void) {
     return &karma_config;
 }

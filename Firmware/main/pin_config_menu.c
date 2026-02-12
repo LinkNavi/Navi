@@ -8,6 +8,7 @@
 static const char *TAG = "PinConfigMenu";
 
 extern RotaryPCNT encoder;
+
 extern void back_to_main(void);
 
 static Menu pin_config_main_menu;

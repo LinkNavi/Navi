@@ -531,7 +531,7 @@ static void karma_configure_auto(void) {
 }
 
 // Update menu_init to include new options:
-static void karma_menu_init(void) {
+void karma_menu_init(void) {
     ESP_LOGI(TAG, "Initializing Karma menus");
     
     menu_init(&karma_main_menu, "Karma Attack");

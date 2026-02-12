@@ -186,27 +186,48 @@ static esp_err_t portal_submit_handler(httpd_req_t *req) {
     return ESP_OK;
 }
 
-// Android/Chrome: expects 204, gets 302 → captive portal detected
+
+// wifi_portal.h - Add Android CaptivePortalLogin intent trigger
+
 static esp_err_t portal_detect_handler(httpd_req_t *req) {
     ESP_LOGI(PORTAL_TAG, "Portal detect: %s", req->uri);
-    httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store");
-    httpd_resp_send(req, "Portal", 6);
+    
+    // Android expects 204 for "no captive portal" but we want to trigger it
+    // Return 200 with redirect to force portal popup
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store, must-revalidate");
+    httpd_resp_set_hdr(req, "Pragma", "no-cache");
+    httpd_resp_set_hdr(req, "Expires", "0");
+    
+    // HTML meta redirect triggers Android's CaptivePortalLogin activity
+    const char *html = 
+        "<!DOCTYPE html><html><head>"
+        "<meta http-equiv='refresh' content='0; url=http://192.168.4.1/'>"
+        "</head><body>Redirecting...</body></html>";
+    
+    httpd_resp_send(req, html, strlen(html));
     return ESP_OK;
 }
 
 static esp_err_t portal_catchall_handler(httpd_req_t *req) {
     ESP_LOGI(PORTAL_TAG, "Catch-all: %s", req->uri);
-    httpd_resp_set_status(req, "302 Found");
-    httpd_resp_set_hdr(req, "Location", "http://192.168.4.1/");
-    httpd_resp_set_hdr(req, "Cache-Control", "no-cache, no-store");
-    httpd_resp_send(req, "Portal", 6);
+    
+    // For Android Chrome: return HTML with meta redirect instead of 302
+    httpd_resp_set_status(req, "200 OK");
+    httpd_resp_set_type(req, "text/html");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+    
+    const char *html = 
+        "<!DOCTYPE html><html><head>"
+        "<meta http-equiv='refresh' content='0; url=http://192.168.4.1/'>"
+        "</head><body>Redirecting to login...</body></html>";
+    
+    httpd_resp_send(req, html, strlen(html));
     return ESP_OK;
 }
 
-// ==================== REGISTER HANDLERS ====================
-
+// Register these additional Android-specific endpoints
 static void portal_register_handlers(httpd_handle_t server) {
     httpd_uri_t u;
 
@@ -215,12 +236,16 @@ static void portal_register_handlers(httpd_handle_t server) {
     u = (httpd_uri_t){.uri = "/submit", .method = HTTP_POST, .handler = portal_submit_handler};
     httpd_register_uri_handler(server, &u);
 
-    // Android
+    // Android specific - return 200 with HTML redirect, not 302
     u = (httpd_uri_t){.uri = "/generate_204", .method = HTTP_GET, .handler = portal_detect_handler};
     httpd_register_uri_handler(server, &u);
     u = (httpd_uri_t){.uri = "/gen_204", .method = HTTP_GET, .handler = portal_detect_handler};
     httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/connectivity_check*", .method = HTTP_GET, .handler = portal_detect_handler};
+    
+    // Chrome uses this
+    u = (httpd_uri_t){.uri = "/connectivity-check.html", .method = HTTP_GET, .handler = portal_detect_handler};
+    httpd_register_uri_handler(server, &u);
+    u = (httpd_uri_t){.uri = "/connectivitycheck/gstatic.html", .method = HTTP_GET, .handler = portal_detect_handler};
     httpd_register_uri_handler(server, &u);
 
     // Apple
@@ -238,13 +263,12 @@ static void portal_register_handlers(httpd_handle_t server) {
     // Firefox
     u = (httpd_uri_t){.uri = "/success.txt", .method = HTTP_GET, .handler = portal_detect_handler};
     httpd_register_uri_handler(server, &u);
-    u = (httpd_uri_t){.uri = "/canonical.html", .method = HTTP_GET, .handler = portal_detect_handler};
-    httpd_register_uri_handler(server, &u);
 
-    // Catch-all last
+    // Catch-all LAST (wildcard matches everything)
     u = (httpd_uri_t){.uri = "/*", .method = HTTP_GET, .handler = portal_catchall_handler};
     httpd_register_uri_handler(server, &u);
 }
+// ==================== REGISTER HANDLERS ====================
 
 // ==================== START / STOP ====================
 
